@@ -148,14 +148,38 @@ opponent's start location from `RequestGameInfo` itself under fog. Consistent wi
 this tool's whole premise (render only what the bot could see), so left as-is rather
 than "fixed".
 
-## Slice 6 — Unit rendering + trails
+## Slice 6 — Unit rendering + trails — ✅ DONE
 
-Own units, the three enemy categories (solid / hollow / dashed + age), movement trails
-faded by age.
+`src/sc2_game_renderer/trail_tracker.py`: `TrailTracker`, render-time and stateful
+like `EnemyMemory` — `unit_tag -> deque of positions`, capped length, dropped
+entirely (not faded) the moment a tag leaves `own_units`. Deliberately *not* stored in
+the frame file: own-unit trails are always reconstructable by replaying frames in
+order, which rendering does anyway, so persisting them would just be redundant derived
+data.
 
-**Verify:** dump ~6 PNGs from across the fixture game and look at them — units are
-where the minimap says they should be, remembered enemies visibly differ from live
-ones, trails point the right way.
+`src/sc2_game_renderer/render_units.py`: own units (filled blue), enemy visible
+(filled red), enemy snapshot (hollow red — SC2's own remembered structures), enemy
+remembered (dashed red + `"Xs ago"` label — our memory tracker's output, already
+computed at extraction time and carried on `ExtractedFrame`). Trails as fading
+line segments, oldest faintest.
+
+**Verified — pure trail logic:** `tests/test_trail_tracker.py`, 7 tests — append,
+length cap dropping oldest first, drop-on-death, no continuity across a gap for a
+reappearing tag, multi-unit independence.
+
+**Verified by eye:** `scripts/preview_frames.py` walks the real fixture's frame file
+in order (so trail history is correct) and dumps PNGs at 6 loops spanning the game.
+The result reads as the actual defeat: loop 12800 shows a visible-red mass gathering
+near the map's choke; by 14000 that same mass is sitting on the bot's own base (solid
+red — still visible, still happening); by 15200 it's faded to dashed markers with age
+labels as the bot loses vision entirely (base destroyed) — solid vs. dashed is
+immediately legible as "happening now" vs. "last known", which is the whole point of
+the view. Trails fan out from the base in the direction units actually moved.
+
+**Known cosmetic limitation, not fixed now:** age labels overlap illegibly in dense
+clusters (e.g. 15+ remembered enemies stacked in one base). Acceptable for v1 — not
+required by this slice's verify bar — revisit only if it turns out to matter in
+practice (e.g. as part of the slice 9 polish pass).
 
 ## Slice 7 — HUD sidebar
 
