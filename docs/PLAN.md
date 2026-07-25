@@ -396,6 +396,19 @@ workaround in the shipped code, just in how it was tested. Confirmed:
 - Play button advances frames continuously with live HUD updates, and the selected
   unit panel correctly follows the same unit across playback frames.
 
+**Follow-up: click reliability.** After confirming structures were already clickable
+via the same mechanism as units (tested with an Orbital Command — health, energy,
+idle order all correct), measured the actual click hit-radius on the fixture: ~7px
+on a 720px canvas with 216 overlapping targets in one dense base cluster — tight
+enough to plausibly feel unreliable in practice. Widened the clickable area to a
+10px minimum (`HIT_RADIUS_MIN` in `viewer.js`), deliberately larger than the drawn
+marker itself — a bigger tap target than the visible glyph is a standard, low-risk
+UI pattern, not a visual change. Confirmed via the same debug-harness technique,
+reading the hit target's radius and the detail panel's actual DOM text back out in
+one script run (needed because the preview tool's stale-content quirk affected
+*different* elements inconsistently across attempts — the single-script readout is
+what made this trustworthy rather than reading screenshots).
+
 ## Slice 10 — Performance pass *(only if needed)*
 
 Measure first. Likely hot spots: full-observation pulls during extract, per-frame

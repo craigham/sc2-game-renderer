@@ -11,6 +11,10 @@
 
 const LOOPS_PER_SECOND = 22.4;
 const MAX_DISPLAY_SIZE = 720; // map pane fits within this many px on its longer side
+// Clickable radius is deliberately more generous than the drawn marker (a 5px dot
+// with a 7px hit area is hard to land in a dense base cluster with dozens of
+// overlapping units) — this is the click target, not the visual glyph.
+const HIT_RADIUS_MIN = 10;
 
 const COLORS = {
   unpathable: [18, 18, 34],
@@ -219,7 +223,7 @@ function drawFilledCircle(ctx, u, r, color, category) {
   ctx.arc(px, py, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
-  hitTargets.push({ px, py, r: r + 2, category, unit: u });
+  hitTargets.push({ px, py, r: Math.max(r + 2, HIT_RADIUS_MIN), category, unit: u });
 }
 
 function drawHollowCircle(ctx, u, r, color, category) {
@@ -229,7 +233,7 @@ function drawHollowCircle(ctx, u, r, color, category) {
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.stroke();
-  hitTargets.push({ px, py, r: r + 2, category, unit: u });
+  hitTargets.push({ px, py, r: Math.max(r + 2, HIT_RADIUS_MIN), category, unit: u });
 }
 
 function drawDashedCircle(ctx, u, r, color, category, ageSeconds) {
@@ -244,7 +248,7 @@ function drawDashedCircle(ctx, u, r, color, category, ageSeconds) {
   ctx.fillStyle = color;
   ctx.font = "10px monospace";
   ctx.fillText(`${Math.round(ageSeconds)}s ago`, px + r + 2, py - r);
-  hitTargets.push({ px, py, r: r + 2, category, unit: u, ageSeconds });
+  hitTargets.push({ px, py, r: Math.max(r + 2, HIT_RADIUS_MIN), category, unit: u, ageSeconds });
 }
 
 // ---------- HUD (mirrors render_hud.py's content; plain DOM text, no canvas needed
