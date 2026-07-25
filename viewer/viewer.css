@@ -1,0 +1,109 @@
+/* Dark theme matching the Python renderer's palette (render_hud.py / render_terrain.py) */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #121218;
+  color: #e1e1e6;
+  font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+}
+
+#loadBar {
+  padding: 10px 16px;
+  background: #1a1a22;
+  border-bottom: 1px solid #2a2a34;
+}
+
+#loadStatus {
+  margin-left: 12px;
+  color: #8c8c96;
+}
+
+#main {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+}
+
+#mapPane {
+  flex: 0 0 auto;
+  line-height: 0; /* kill the canvas's inline-element bottom gap */
+}
+
+#mapCanvas {
+  background: #121218;
+  cursor: pointer;
+  image-rendering: pixelated;
+}
+
+#sidePane {
+  flex: 0 0 280px;
+  background: #1a1a22;
+  border: 1px solid #2a2a34;
+  border-radius: 6px;
+  padding: 14px;
+  min-height: 300px;
+}
+
+#sidePane hr {
+  border: none;
+  border-top: 1px solid #2a2a34;
+  margin: 14px 0;
+}
+
+.clock {
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+
+.section-label {
+  color: #8c8c96;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.warning {
+  color: #eb5a3c;
+}
+
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #1a1a22;
+  border-top: 1px solid #2a2a34;
+}
+
+#controls button {
+  background: #2a2a34;
+  color: #e1e1e6;
+  border: 1px solid #3a3a46;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+#controls button:hover {
+  background: #34343f;
+}
+
+#scrubBar {
+  flex: 1 1 auto;
+}
+
+#frameLabel {
+  color: #8c8c96;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#unitDetail div {
+  margin-bottom: 3px;
+}

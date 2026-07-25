@@ -11,6 +11,14 @@ from s2clientprotocol import raw_pb2, sc2api_pb2
 
 
 @dataclass(frozen=True, slots=True)
+class UnitOrder:
+    ability_id: int
+    target_unit_tag: int | None
+    target_pos: tuple[float, float] | None
+    progress: float
+
+
+@dataclass(frozen=True, slots=True)
 class UnitSnapshot:
     tag: int
     unit_type: int
@@ -22,6 +30,12 @@ class UnitSnapshot:
     shield_max: float
     energy: float
     energy_max: float
+    # SC2 only ever populates orders for the observing player's own units — an enemy
+    # unit's queued order is exactly the kind of intel fog is supposed to hide, and
+    # this was confirmed against the fixture (0 of 69 enemy units had any order vs.
+    # 81 of 108 own units). So this is always empty for enemy_visible/enemy_snapshot;
+    # kept as one uniform shape rather than a separate own-only type.
+    orders: tuple[UnitOrder, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +70,16 @@ class Frame:
     army_value_vespene: int
 
 
+def _order(o: raw_pb2.UnitOrder) -> UnitOrder:
+    which = o.WhichOneof("target")
+    return UnitOrder(
+        ability_id=o.ability_id,
+        target_unit_tag=o.target_unit_tag if which == "target_unit_tag" else None,
+        target_pos=(o.target_world_space_pos.x, o.target_world_space_pos.y) if which == "target_world_space_pos" else None,
+        progress=o.progress,
+    )
+
+
 def _unit(u: raw_pb2.Unit) -> UnitSnapshot:
     return UnitSnapshot(
         tag=u.tag,
@@ -68,6 +92,7 @@ def _unit(u: raw_pb2.Unit) -> UnitSnapshot:
         shield_max=u.shield_max,
         energy=u.energy,
         energy_max=u.energy_max,
+        orders=tuple(_order(o) for o in u.orders),
     )
 
 

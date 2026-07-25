@@ -38,15 +38,20 @@ truth.
 9. **No pixel-position assertions in tests.** The rendering layer is verified by
    looking at output frames, not by asserting coordinates.
 
-## Architecture: two stages
+## Architecture: two stages, one shared output, two consumers
 
 Stepping a replay is slow and needs the SC2 client. Rendering is fast, pure, and is
 what gets iterated on. These are separated so visual tweaks never re-step a replay.
+The frame file `extract` produces is consumed by **two independent renderers** — the
+batch MP4 pipeline and the interactive browser viewer — neither of which changes
+what `extract` does.
 
 ```
                  [SC2 client required]            [pure, no SC2]
-replay.SC2Replay ──── extract ────► frames.jsonl.gz ──── render ────► out.mp4
-tbone logs ──────────────────────────────┘ (joined at extract)
+                                              ┌──── render ────► out.mp4
+replay.SC2Replay ──── extract ────► frames.jsonl.gz
+tbone logs ──────────────────────────────┘   └──── viewer ────► (browser, click-to-inspect)
+                                              (joined at extract)
 ```
 
 ### Stage 1: `extract`
@@ -63,10 +68,24 @@ Internally split so the SC2 dependency is a thin shell:
 - **Enemy memory tracker** (pure) — see below.
 - **Log joiner** (pure) — see below.
 
-### Stage 2: `render`
+### Stage 2a: `render` (batch, MP4)
 
 Reads `frames.jsonl.gz`, draws each frame with Pillow, pipes raw RGB to `ffmpeg` over
 stdin, out comes MP4. Never touches SC2 or the replay.
+
+### Stage 2b: `viewer` (interactive, browser)
+
+A static HTML+JS page — no server, no build step. Fetches `frames.jsonl.gz` directly
+and decompresses it with the browser's native `DecompressionStream('gzip')`, so the
+frame file format doesn't change or need a second export step. Renders on `<canvas>`
+using the same world→pixel math as `coords.py`, ported to a few lines of JS. A
+scrub bar drives playback; clicking a unit hit-tests its on-screen marker for the
+current frame and shows a side panel with its full `UnitSnapshot` — health, shields,
+energy, and current order(s) (ability + target).
+
+Deliberately not built: a server, a build toolchain (webpack/vite/etc.), or state
+shared across a second viewer. This is a personal debugging tool for one user on one
+Mac — a single HTML file opened locally is the right amount of infrastructure.
 
 ## Fog and enemy memory
 
@@ -95,8 +114,13 @@ belief is visually obvious — that is the whole point of the view.
 
 Free from the observation, per frame:
 
-- Own units: position, type, health/shields fraction, energy.
-- Enemy units: the three categories above.
+- Own units: position, type, health/shields fraction, energy, current order(s)
+  (`unit.orders`: ability id, target — a unit tag or a world position, mutually
+  exclusive — and progress). **Only ever populated for own units** — confirmed
+  against the fixture (0 of 69 enemy units had any order, vs. 81 of 108 own units).
+  SC2 doesn't leak an opponent's queued actions through fog, same story as the
+  single `start_locations` entry found in slice 5.
+- Enemy units: the three categories above (never orders, per the above).
 - Resources: minerals, vespene, income rates.
 - Supply used / cap, worker count, idle worker count (`player_common.idle_worker_count`
   — turned out to be a direct field, not derived as originally assumed).

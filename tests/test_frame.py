@@ -1,3 +1,4 @@
+import pytest
 from s2clientprotocol import sc2api_pb2
 
 from sc2_game_renderer.frame import frame_from_observation
@@ -94,3 +95,52 @@ def test_frame_from_observation_is_a_pure_function():
     a = frame_from_observation(obs)
     b = frame_from_observation(obs)
     assert a == b
+
+
+# --- unit orders ("current command") ------------------------------------------------
+
+def _own_unit(frame, tag: int):
+    return next(u for u in frame.own_units if u.tag == tag)
+
+
+def test_order_with_a_unit_target():
+    frame = frame_from_observation(_load_observations()[42])
+    order = _own_unit(frame, 4354473986).orders[0]
+    assert order.ability_id == 295
+    assert order.target_unit_tag == 4302569473
+    assert order.target_pos is None
+
+
+def test_order_with_a_world_position_target():
+    frame = frame_from_observation(_load_observations()[42])
+    order = _own_unit(frame, 4363124737).orders[0]
+    assert order.ability_id == 522
+    assert order.target_pos == (38.5, 60.5)
+    assert order.target_unit_tag is None
+
+
+def test_order_with_no_target_but_progress():
+    # A construction-style order (e.g. building something) reports progress with
+    # neither a unit nor a world-position target.
+    frame = frame_from_observation(_load_observations()[42])
+    order = _own_unit(frame, 4380164097).orders[0]
+    assert order.ability_id == 560
+    assert order.progress == pytest.approx(0.9875)
+    assert order.target_unit_tag is None
+    assert order.target_pos is None
+
+
+def test_enemy_units_never_have_orders():
+    """SC2 never populates orders for a unit you don't own — that would leak the
+    opponent's intentions straight through fog. Confirmed on the real fixture: 0 of
+    69 enemy units had any order, vs. 81 of 108 own units."""
+    frame = frame_from_observation(_load_observations()[42])
+    assert all(u.orders == () for u in frame.enemy_visible)
+    assert all(u.orders == () for u in frame.enemy_snapshot)
+    assert any(u.orders != () for u in frame.own_units)  # sanity: own units do have some
+
+
+def test_idle_own_unit_has_no_orders():
+    frame = frame_from_observation(_load_observations()[42])
+    idle_units = [u for u in frame.own_units if u.orders == ()]
+    assert idle_units  # 108 - 81 = 27 own units with no queued order, per the fixture

@@ -16,7 +16,7 @@ from typing import Iterable, Iterator
 import numpy as np
 
 from sc2_game_renderer.enemy_memory import RememberedEnemy
-from sc2_game_renderer.frame import Frame, UnitSnapshot
+from sc2_game_renderer.frame import Frame, UnitOrder, UnitSnapshot
 
 FORMAT_VERSION = 1
 
@@ -96,7 +96,19 @@ class ExtractedFrame:
     remembered_enemies: tuple[RememberedEnemy, ...]
 
 
+def _order_from_dict(d: dict) -> UnitOrder:
+    target_pos = d["target_pos"]
+    return UnitOrder(
+        ability_id=d["ability_id"],
+        target_unit_tag=d["target_unit_tag"],
+        target_pos=tuple(target_pos) if target_pos is not None else None,
+        progress=d["progress"],
+    )
+
+
 def _unit_from_dict(d: dict) -> UnitSnapshot:
+    d = dict(d)
+    d["orders"] = tuple(_order_from_dict(o) for o in d["orders"])
     return UnitSnapshot(**d)
 
 

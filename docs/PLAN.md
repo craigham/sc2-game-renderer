@@ -327,6 +327,75 @@ frame the first time this was tried) at frame 85 (loop 340) and frame 3192 (loop
 confirming the encode is faithful: minerals 55/believed 5, and 125/125/supply
 81:118, respectively.
 
+## Addition — interactive browser viewer — ✅ DONE
+
+Requested after slice 9: click a unit to see its state (health, current command),
+in a browser, as an *addition* alongside the MP4 pipeline — not a replacement. See
+`docs/SPEC.md` § Stage 2b for the architecture (one frame file, two independent
+renderers).
+
+Two parts:
+
+1. **Unit orders in the data model.** `Frame`/`UnitSnapshot` didn't capture "current
+   command" at all before this. Added `UnitOrder` (`frame.py`: ability_id, a
+   target — unit tag or world position, mutually exclusive via the proto's `target`
+   oneof — and progress) and wired it through `frame_file.py`'s (de)serialization.
+   Confirmed directly against the fixture, not assumed: **SC2 only ever populates
+   orders for the observing player's own units** — 0 of 69 enemy units had any order
+   vs. 81 of 108 own units, the same fog-of-war-applies-to-metadata pattern already
+   found for `start_locations` in slice 5. Required a fresh Docker extraction (the
+   previously-generated frame file predates this field).
+
+2. **`viewer/`** — static HTML+JS+CSS, no server, no build step. `index.html` +
+   `viewer.js` + `viewer.css`, plus `data/ability_names.js` / `unit_type_names.js`
+   (static id→name tables generated once by `scripts/generate_id_names.py` from
+   burnysc2's enums). Loads a `.frames.jsonl.gz` via `<input type="file">` +
+   the browser's native `DecompressionStream('gzip')` — deliberately not `fetch()`,
+   which most browsers refuse for local `file://` pages, and deliberately not
+   `.json` files, for the same reason (shipped as `<script src>`-loaded `.js`
+   instead). Terrain decode, the world↔pixel transform, and the unit/HUD drawing
+   are the same logic as `coords.py`/`render_terrain.py`/`render_units.py`, ported to
+   JS/canvas — this is the one place that duplication was accepted, since a browser
+   can't run the Python renderer.
+
+   **Explicitly out of scope for this addition:** the `stderr.log` bot-state overlay
+   (events, banners, ticker, belief cross-check) — porting `bot_log.py` to JS would
+   roughly double this addition's scope. MP4-only for now; noted in `viewer/README.md`
+   as a clearly-scoped follow-up, not a silent gap.
+
+**Verified — pure layer:** existing `frame`/`frame_file` test suites extended with 5
+new tests using real fixture examples for each of the three order shapes (unit
+target, world-position target, no-target-with-progress) plus the enemy-never-has-
+orders and idle-own-unit-has-no-orders invariants. All 99 tests pass.
+
+**Verified in a real browser**, via the Browser pane tool. Hit one real environment
+constraint doing this: the pane's file-input automation can't drive a native OS file
+picker, and separately its `navigate` reuses a cached DOM/state snapshot across
+reloads of the same local file rather than re-executing fresh each time (confirmed:
+query-string parameters were silently dropped, and stale panel content survived a
+"fresh" navigate). Worked around both with a throwaway same-realm test harness
+(deleted before commit) that called the viewer's own functions directly — not a
+workaround in the shipped code, just in how it was tested. Confirmed:
+
+- Header parse: map name, frame count, `bot_player_id` all correct.
+- Terrain renders correctly (plateaus/ramps/cliffs match the Python renderer).
+- Scrubbing to loop 12768 reproduces the documented fixture values exactly
+  (minerals 125, supply 81/118, army value 1900m/475g).
+- **Click-to-inspect, the actual feature requested:** clicking an own SCV showed
+  `HARVEST_GATHER_SCV → unit 4299948033`, health 45/45 — a human-readable order name,
+  not a raw ability id.
+- **A real bug caught by testing, not spotted in review:** the first version showed
+  "idle" for a *remembered* enemy unit's orders — technically true (no orders field
+  populated) but misleading, since it implies certainty about something fog hides.
+  Fixed to say "not visible through fog" for any non-own unit; own units still
+  correctly show real "idle" when they truly have no queued order (verified both
+  cases explicitly, plus the own-unit-with-a-real-order case, against real fixture
+  data with an explicit debug harness rather than trusting a screenshot read — which
+  also caught that a unit tag and an age had been misread by eye from an earlier
+  screenshot before being double-checked against the actual data).
+- Play button advances frames continuously with live HUD updates, and the selected
+  unit panel correctly follows the same unit across playback frames.
+
 ## Slice 10 — Performance pass *(only if needed)*
 
 Measure first. Likely hot spots: full-observation pulls during extract, per-frame

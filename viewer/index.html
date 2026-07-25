@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SC2 Replay Viewer</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+
+<div id="loadBar">
+  <label for="fileInput">Frame file (.frames.jsonl.gz): </label>
+  <input type="file" id="fileInput" accept=".gz">
+  <span id="loadStatus"></span>
+</div>
+
+<div id="main">
+  <div id="mapPane">
+    <canvas id="mapCanvas"></canvas>
+  </div>
+  <div id="sidePane">
+    <div id="hud"></div>
+    <hr>
+    <div id="unitDetail"><em>Click a unit to inspect it</em></div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="stepBackBtn">&#9664;</button>
+  <button id="playBtn">Play</button>
+  <button id="stepFwdBtn">&#9654;</button>
+  <input type="range" id="scrubBar" min="0" value="0" step="1">
+  <span id="frameLabel"></span>
+</div>
+
+<script src="data/ability_names.js"></script>
+<script src="data/unit_type_names.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>
