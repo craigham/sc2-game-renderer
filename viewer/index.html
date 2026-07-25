@@ -11,6 +11,9 @@
   <label for="fileInput">Frame file (.frames.jsonl.gz): </label>
   <input type="file" id="fileInput" accept=".gz">
   <span id="loadStatus"></span>
+  <label for="logFileInput">Bot log (stderr.log): </label>
+  <input type="file" id="logFileInput" accept=".log,.txt">
+  <span id="logStatus"></span>
 </div>
 
 <div id="main">
@@ -30,6 +33,18 @@
   <button id="stepFwdBtn">&#9654;</button>
   <input type="range" id="scrubBar" min="0" value="0" step="1">
   <span id="frameLabel"></span>
+</div>
+
+<div id="logPanel">
+  <div id="logResizeHandle"></div>
+  <div id="logTableWrap">
+    <table id="logTable">
+      <thead>
+        <tr><th>Loop</th><th>Clock</th><th>Level</th><th>Logger</th><th>Message</th></tr>
+      </thead>
+      <tbody id="logTableBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script src="data/ability_names.js"></script>

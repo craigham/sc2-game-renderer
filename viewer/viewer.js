@@ -2,11 +2,13 @@
 
 /* Interactive browser viewer — addition alongside the batch MP4 pipeline (see
  * docs/SPEC.md § Stage 2b). Reads the same .frames.jsonl.gz extract produces;
- * no server, no build step. Deliberately does NOT read stderr.log — the
- * bot-state overlay (events/banners/ticker/belief cross-check) is MP4-only for
- * now. Mirrors render_terrain.py / render_units.py / render_hud.py's visual
- * language in JS/canvas rather than reusing Python-rendered images, so this
- * file is the only place that logic is duplicated.
+ * no server, no build step. Mirrors render_terrain.py / render_units.py /
+ * render_hud.py's visual language in JS/canvas rather than reusing
+ * Python-rendered images, so this file is the only place that logic is
+ * duplicated. Optionally also reads the bot's raw stderr.log (same line
+ * format bot_log.py parses) for the scrollable log panel — that panel shows
+ * raw parsed lines only; the classified BotEvent whitelist/banners/ticker/
+ * belief cross-check overlay is still MP4-only for now.
  */
 
 const LOOPS_PER_SECOND = 22.4;
@@ -40,6 +42,10 @@ let liveExtractionUrl = null; // set while ?frames=<url> is still mid-extraction
 let livePollTimer = null;
 const LIVE_POLL_INTERVAL_MS = 2000;
 let zoomLevel = MIN_ZOOM;
+
+let logLines = []; // parsed stderr.log entries, file order == game-loop order
+let logRows = []; // <tr> elements, index-aligned with logLines
+let highlightedLogRow = null;
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
 function abilityName(id) {
@@ -365,6 +371,12 @@ function renderFrame(index) {
   updateHud(frame);
   updateScrubUI(index, frame);
   updateSelectedUnitPanel();
+  // Scrubbing/stepping/stopping call stopPlayback() before ever reaching
+  // renderFrame(), so `playing` is already false for those — only the
+  // playback timer's own tick leaves it true here. Skipping the scroll in
+  // that case is deliberate: jumping the log panel to a new row 10x/sec
+  // during playback would fight any manual scrolling the user is doing.
+  if (!playing) updateLogPanelForFrame(frame);
 }
 
 function drawFilledCircle(ctx, u, r, color, category) {
@@ -551,3 +563,115 @@ function stopPlayback() {
   if (playTimer) clearInterval(playTimer);
   playTimer = null;
 }
+
+// ---------- bot log panel (raw stderr.log lines, joined to the paused frame) ----------
+// Mirrors bot_log.py's _LOG_LINE regex exactly — same sharpy log_manager prefix.
+const LOG_LINE_RE =
+  /^(\S+)\s+(\d+)\s+(\d+)ms\s+(-?\d+)M\s+(-?\d+)G\s+(\d+)\/\s*(\d+)U\s+(INFO|WARNING|ERROR|DEBUG)\s+([\w.]+):(\d+)\s(.*)$/;
+
+document.getElementById("logFileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setLogStatus(`Reading ${file.name}...`);
+  try {
+    const text = await file.text();
+    parseLogFile(text, file.name);
+  } catch (err) {
+    setLogStatus(`Failed to load ${file.name}: ${err.message}`);
+    console.error(err);
+  }
+});
+
+function parseLogFile(text, filename) {
+  logLines = [];
+  let total = 0;
+  for (const raw of text.split("\n")) {
+    if (!raw.trim()) continue;
+    total++;
+    const m = LOG_LINE_RE.exec(raw);
+    if (!m) continue; // container preamble / non-sharpy lines — see bot_log.py's parse_log_lines
+    logLines.push({
+      clock: m[1],
+      game_loop: parseInt(m[2], 10),
+      level: m[8],
+      logger: `${m[9]}:${m[10]}`,
+      message: m[11],
+    });
+  }
+  setLogStatus(`${filename}: ${logLines.length}/${total} lines parsed`);
+  buildLogTable();
+  if (frames.length > 0) updateLogPanelForFrame(frames[currentIndex]);
+}
+
+function setLogStatus(text) {
+  document.getElementById("logStatus").textContent = text;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildLogTable() {
+  const tbody = document.getElementById("logTableBody");
+  tbody.innerHTML = "";
+  logRows = new Array(logLines.length);
+  highlightedLogRow = null;
+  const frag = document.createDocumentFragment();
+  logLines.forEach((line, i) => {
+    const tr = document.createElement("tr");
+    tr.className = `loglevel-${line.level}`;
+    tr.innerHTML = `<td>${line.game_loop}</td><td>${line.clock}</td><td>${line.level}</td>` +
+      `<td>${line.logger}</td><td>${escapeHtml(line.message)}</td>`;
+    logRows[i] = tr;
+    frag.appendChild(tr);
+  });
+  tbody.appendChild(frag);
+}
+
+// bisect_left on game_loop, then pick whichever neighbor is closer — mirrors
+// join_events_to_frames' nearest-frame join in bot_log.py, but for scrolling
+// the panel there's no reason to drop out-of-tolerance entries the way that
+// join does; any nearest row is still useful context.
+function findNearestLogIndex(gameLoop) {
+  if (logLines.length === 0) return -1;
+  let lo = 0;
+  let hi = logLines.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (logLines[mid].game_loop < gameLoop) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo >= logLines.length) return logLines.length - 1;
+  if (lo > 0 && logLines[lo].game_loop - gameLoop > gameLoop - logLines[lo - 1].game_loop) return lo - 1;
+  return lo;
+}
+
+function updateLogPanelForFrame(frame) {
+  if (logRows.length === 0) return;
+  const idx = findNearestLogIndex(frame.game_loop);
+  if (idx < 0) return;
+  if (highlightedLogRow) highlightedLogRow.classList.remove("current");
+  const row = logRows[idx];
+  row.classList.add("current");
+  row.scrollIntoView({ block: "center" });
+  highlightedLogRow = row;
+}
+
+// ---------- log panel resize (drag the handle at its top edge) ----------
+const logPanel = document.getElementById("logPanel");
+const logResizeHandle = document.getElementById("logResizeHandle");
+let resizingLogPanel = false;
+
+logResizeHandle.addEventListener("mousedown", (e) => {
+  resizingLogPanel = true;
+  e.preventDefault();
+});
+window.addEventListener("mousemove", (e) => {
+  if (!resizingLogPanel) return;
+  const rect = logPanel.getBoundingClientRect();
+  const newHeight = rect.bottom - e.clientY; // handle sits at the panel's top edge
+  logPanel.style.height = `${Math.min(window.innerHeight * 0.7, Math.max(80, newHeight))}px`;
+});
+window.addEventListener("mouseup", () => {
+  resizingLogPanel = false;
+});

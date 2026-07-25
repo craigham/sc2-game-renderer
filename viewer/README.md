@@ -11,6 +11,12 @@ No server, no build step, no npm.
 2. Click "Choose File" and pick a `.frames.jsonl.gz` from `out/`.
 3. Scrub, play/pause, step frame-by-frame. Click any unit marker to inspect it —
    health, shields, energy, and (own units only) current order(s).
+4. Optionally also pick the match's `stderr.log` in the second file input to populate
+   the log panel at the bottom of the page. Drag the handle above it to resize. The
+   panel scrolls to and highlights the log line nearest the current frame's game
+   loop — but only when playback is paused, stepped, or scrubbed, never while
+   playing, so it doesn't fight a manual scroll 10 times a second. Scroll freely
+   within it to see entries around the paused frame.
 
 Requires a browser with `DecompressionStream` (Chrome/Edge 80+, Firefox 113+, Safari
 16.4+) — all recent.
@@ -27,10 +33,11 @@ own units filled blue, enemy visible filled red, enemy structures SC2 remembers
 through fog hollow red, enemy positions this tool remembers dashed red with an age
 label.
 
-**Not included, on purpose:** the `stderr.log` bot-state overlay — positioned
+The log panel shows raw parsed lines (loop, clock, level, logger, message) only.
+**Not included, on purpose:** the classified bot-state overlay — positioned
 build/pathing events, banners, the recent-events ticker, and the belief-vs-truth
 resource cross-check. Those are MP4-only for now (`render --log`). Porting
-`bot_log.py`'s parser/classifier to JS would roughly double this addition's scope;
+`bot_log.py`'s event classifier to JS would roughly double this addition's scope;
 worth doing later if wanted, not bundled into this pass.
 
 **Current order(s):** SC2 only ever reports a unit's queued order for units you own

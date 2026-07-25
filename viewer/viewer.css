@@ -119,3 +119,69 @@ body {
 #unitDetail div {
   margin-bottom: 3px;
 }
+
+#logPanel {
+  flex: 0 0 auto;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a22;
+  border-top: 1px solid #2a2a34;
+  min-height: 0;
+}
+
+#logResizeHandle {
+  flex: 0 0 6px;
+  cursor: ns-resize;
+  background: #2a2a34;
+}
+
+#logResizeHandle:hover {
+  background: #3a3a46;
+}
+
+#logTableWrap {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+#logTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+#logTable th, #logTable td {
+  text-align: left;
+  padding: 2px 8px;
+  border-bottom: 1px solid #22222a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#logTable th:nth-child(1), #logTable td:nth-child(1) { width: 70px; }
+#logTable th:nth-child(2), #logTable td:nth-child(2) { width: 60px; }
+#logTable th:nth-child(3), #logTable td:nth-child(3) { width: 70px; }
+#logTable th:nth-child(4), #logTable td:nth-child(4) { width: 220px; }
+#logTable td:nth-child(5) { white-space: normal; }
+
+#logTable thead th {
+  position: sticky;
+  top: 0;
+  background: #1a1a22;
+  color: #8c8c96;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+#logTable tr.loglevel-WARNING td { color: #d9a441; }
+#logTable tr.loglevel-ERROR td { color: #eb5a3c; }
+
+#logTable tr.current {
+  background: #2a3a4a;
+}
