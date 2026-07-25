@@ -78,22 +78,46 @@ cli_extract <replay> --player <id> --out <path>`, mounting `src/` at `/work/src`
 into a `docker/run-extract.sh` wrapper once slice 4 stabilizes the interface — held
 off since it would still be a one-file convenience wrapper, not new logic.
 
-## Slice 4 — `stderr.log` parser + joiner *(test-first)*
+## Slice 4 — `stderr.log` parser + joiner *(test-first)* — ✅ DONE
 
-Parse the sharpy log prefix (clock, loop, step ms, minerals, gas, supply, level,
-logger, message) and classify messages against a whitelist of interesting events —
-positioned build/train events, pathing failures, income-advantage changes, worker
-danger, action errors, `[GameAnalyzerEnd]` summary. Join to frames by game loop,
-nearest-at-or-after within one sample interval; count and report unjoinable records.
+`src/sc2_game_renderer/bot_log.py`, three pure layers:
 
-Also infer bot player id and game result from the log preamble/postamble.
+- `parse_log_lines`: raw line → `LogLine` (the sharpy prefix — clock, loop, step ms,
+  minerals, gas, supply, level, logger, message). Clock is captured but deliberately
+  unparsed further: its shape differs between bot-startup lines (`H:MM:SS` elapsed
+  wall time) and in-game lines (`MM:SS` game clock), and game_loop is what everything
+  joins on anyway.
+- `classify_events`: `LogLine` → `BotEvent | None` against a 12-kind whitelist —
+  positioned (`unit_trained`, `build_addon`, `build_gas`, `cancel_building`,
+  `no_path`, `unreachable`), banners (`advantage`, `workers_in_danger`,
+  `high_working_danger`, `action_error`), and end-of-game (`unit_summary`,
+  `resource_summary`, stateful only in tracking which `[GameAnalyzerEnd]` section —
+  "Own units:" / "Enemy units:" — the following rows belong to).
+- `join_events_to_frames`: nearest-sampled-frame-at-or-after within one sample
+  interval, via `bisect`; returns dropped count alongside joined pairs.
 
-**Verify:** unit tests against the checked-in `4891371/stderr.log` — parse rate ≥99%
-with the only failures being the known container preamble; **negative minerals
-(`-100M`) parse correctly**; the 75%-of-lines `zone_defense` "Pulling worker" noise is
-excluded by the whitelist; on-boundary, between-sample, and out-of-tolerance join
-cases; a deliberately mismatched replay/log pairing reports a high drop count rather
-than silently producing an empty overlay.
+Plus `infer_bot_player_id` / `infer_result`, which read two lines that predate the
+bot's own logging sink (loguru's default format, not the sharpy prefix) and so need
+their own patterns rather than reusing the above.
+
+**Verified — pure layer:** `tests/test_bot_log.py`, 23 tests against the real
+`replays/4891371/stderr.log` (2,997 lines) plus synthetic join-boundary cases:
+
+| | |
+| --- | --- |
+| Parse rate | 99.80% (2991/2997); the 6 failures are exactly matplotlib/mkdir startup noise, pre-sink loguru lines, and aiohttp shutdown chatter — pinned by name, not just a threshold |
+| Negative minerals | 4 lines, values `{-100, -50, -46}` — parse correctly, no crash |
+| Noise exclusion | 2,243 "Pulling worker" lines (75% of the file) → 0 events |
+| Classified events | 722 total across 12 kinds (regression-pinned per-kind counts) |
+| `infer_bot_player_id` | 2 |
+| `infer_result` | `(2, "Defeat")` |
+
+**Verified — real end-to-end**, joining the real 722 classified events against the
+actual `out/4891371.frames.jsonl.gz` from slice 3 (not a synthetic proxy): **all 722
+join, 0 dropped** — confirms the replay and the log are genuinely the same game
+(loops from the log are exact multiples of 4, matching the bot's own step size and
+the frame file's sampling interval). A deliberately mismatched pairing (real events
+against a disjoint frame_loops range) drops all 722, as the design requires.
 
 ## Slice 5 — Static terrain background
 
