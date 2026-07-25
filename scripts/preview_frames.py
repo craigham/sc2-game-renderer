@@ -12,8 +12,10 @@ from pathlib import Path
 
 from sc2_game_renderer.coords import WorldToPixel
 from sc2_game_renderer.frame_file import FrameFileReader
+from sc2_game_renderer.render_hud import compose_frame, render_hud_panel
 from sc2_game_renderer.render_terrain import render_terrain
 from sc2_game_renderer.render_units import render_units
+from sc2_game_renderer.supply_block_tracker import SupplyBlockTracker
 from sc2_game_renderer.trail_tracker import TrailTracker
 
 ap = argparse.ArgumentParser()
@@ -30,23 +32,29 @@ with FrameFileReader(args.frame_file) as reader:
     header = reader.header
     transform = WorldToPixel.for_playable_area(header.playable_area, args.scale)
     background = render_terrain(header, args.scale)
-    tracker = TrailTracker()
+    trail_tracker = TrailTracker()
+    supply_tracker = SupplyBlockTracker()
 
     for extracted in reader:
-        tracker.update(extracted.frame)
-        loop = extracted.frame.game_loop
+        frame = extracted.frame
+        trail_tracker.update(frame)
+        blocked_seconds = supply_tracker.update(frame)
+        loop = frame.game_loop
 
         if remaining_targets and loop >= remaining_targets[0]:
             target = remaining_targets.pop(0)
-            img = render_units(background, transform, extracted, tracker.trails())
+            map_img = render_units(background, transform, extracted, trail_tracker.trails())
+            hud_panel = render_hud_panel(frame, blocked_seconds, height=map_img.height)
+            combined = compose_frame(map_img, hud_panel)
             out_path = args.out_dir / f"loop_{loop:06d}_target_{target:06d}.png"
-            img.save(out_path)
+            combined.save(out_path)
             print(
                 f"target {target:>6} -> loop {loop:>6} ({loop/22.4:>5.0f}s)  "
-                f"own={len(extracted.frame.own_units):>3} "
-                f"enemy_vis={len(extracted.frame.enemy_visible):>3} "
-                f"enemy_snap={len(extracted.frame.enemy_snapshot):>3} "
-                f"remembered={len(extracted.remembered_enemies):>3}  -> {out_path}"
+                f"own={len(frame.own_units):>3} "
+                f"enemy_vis={len(frame.enemy_visible):>3} "
+                f"enemy_snap={len(frame.enemy_snapshot):>3} "
+                f"remembered={len(extracted.remembered_enemies):>3}  "
+                f"minerals={frame.minerals} supply={frame.supply_used}/{frame.supply_cap}  -> {out_path}"
             )
 
         if not remaining_targets:

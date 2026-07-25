@@ -103,7 +103,9 @@ def frame_from_observation(response_observation: sc2api_pb2.ResponseObservation)
         supply_army=pc.food_army,
         supply_workers=pc.food_workers,
         idle_worker_count=pc.idle_worker_count,
-        supply_blocked=pc.food_used >= pc.food_cap and pc.food_cap < 200,
+        # food_cap > 0 excludes a wiped-out player (0/0): with no supply structures
+        # left at all, "blocked" is meaningless — there's nothing to be blocked on.
+        supply_blocked=0 < pc.food_cap < 200 and pc.food_used >= pc.food_cap,
         army_value_minerals=round(sd.used_minerals.army),
         army_value_vespene=round(sd.used_vespene.army),
     )

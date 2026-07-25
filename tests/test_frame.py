@@ -72,6 +72,17 @@ def test_supply_blocked_false_at_the_200_hard_cap():
     assert frame.supply_blocked is False
 
 
+def test_supply_blocked_false_when_wiped_out_at_zero_zero():
+    """A defeated player with no supply structures left reads 0/0. food_used(0) >=
+    food_cap(0) would naively read as blocked, but there's nothing to be blocked on —
+    found by eye in the slice 7 HUD preview at the fixture's final frame."""
+    obs = _load_observations()[42]
+    obs.observation.player_common.food_cap = 0
+    obs.observation.player_common.food_used = 0
+    frame = frame_from_observation(obs)
+    assert frame.supply_blocked is False
+
+
 def test_first_and_last_frame_loops_match_fixture_readme():
     observations = _load_observations()
     assert observations[0].observation.game_loop == 0

@@ -181,12 +181,39 @@ clusters (e.g. 15+ remembered enemies stacked in one base). Acceptable for v1 �
 required by this slice's verify bar — revisit only if it turns out to matter in
 practice (e.g. as part of the slice 9 polish pass).
 
-## Slice 7 — HUD sidebar
+## Slice 7 — HUD sidebar — ✅ DONE
 
-Resources, income, supply (+ block duration), workers, idle workers, army value, game
-clock.
+`src/sc2_game_renderer/supply_block_tracker.py`: `SupplyBlockTracker`, render-time and
+stateful like `TrailTracker`/`EnemyMemory` — duration resets to 0 the moment
+`frame.supply_blocked` goes false, so consecutive blocked periods don't bleed into
+each other.
 
-**Verify:** eyeball sampled frames against the replay's own numbers at the same time.
+`src/sc2_game_renderer/render_hud.py`: `render_hud_panel` (clock, minerals/vespene +
+rate, supply + `BLOCKED Xs` when applicable, workers + idle count, army value) and
+`compose_frame` (map pane + HUD side by side at their natural sizes — fitting to a
+final output resolution is a slice 9 concern).
+
+**Verified — pure tracker logic:** `tests/test_supply_block_tracker.py`, 5 tests —
+zero when unblocked, zero on the frame a block starts, growing duration across
+consecutive blocked frames, reset on unblocking, two separate blocked periods staying
+independent.
+
+**Verified by eye, against the replay's own numbers** (this slice's specified bar):
+`scripts/preview_frames.py` extended to compose the full map+HUD frame. At loop
+12768 the HUD reads minerals=125, supply=81/118 — an exact match to the fixture's
+independently-documented values. At loop 0 it reads minerals=50, supply=12/15 —
+matching `stderr.log`'s own first `[GameAnalyzer]` line byte for byte.
+
+**Bug found and fixed by this same eyeballing step:** the HUD showed `BLOCKED 27s`
+at the fixture's final frame (loop 15200), where the bot is fully wiped out at
+0/0 supply. `frame.py`'s original `supply_blocked` condition
+(`food_used >= food_cap and food_cap < 200`) is true whenever both are 0 — a
+defeated player with no supply structures left isn't meaningfully "blocked," there's
+nothing to be blocked *on*. Fixed to require `food_cap > 0`, with a regression test
+(`test_supply_blocked_false_when_wiped_out_at_zero_zero`) and a regenerated fixture
+frame file confirming the corrected render. This is the second real bug this build
+has caught by actually looking at output rather than trusting the code once tests
+pass — see slice 1's idle-worker/army-value corrections for the first.
 
 ## Slice 8 — Bot-state overlay
 
