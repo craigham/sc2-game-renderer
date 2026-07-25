@@ -2,12 +2,19 @@
 
 * { box-sizing: border-box; }
 
-body {
+html, body {
+  height: 100%;
   margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
   background: #121218;
   color: #e1e1e6;
   font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 14px;
+  overflow: hidden; /* the map pane scrolls internally; the page itself never does */
 }
 
 #loadBar {
@@ -22,18 +29,23 @@ body {
 }
 
 #main {
+  flex: 1 1 auto;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 16px;
   padding: 16px;
+  min-height: 0; /* let mapPane/sidePane shrink and scroll instead of overflowing the page */
 }
 
 #mapPane {
-  flex: 0 0 auto;
-  line-height: 0; /* kill the canvas's inline-element bottom gap */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto; /* scrollbars are the pan mechanism once zoomed past the pane size */
+  position: relative;
 }
 
 #mapCanvas {
+  display: block;
   background: #121218;
   cursor: pointer;
   image-rendering: pixelated;
@@ -45,7 +57,7 @@ body {
   border: 1px solid #2a2a34;
   border-radius: 6px;
   padding: 14px;
-  min-height: 300px;
+  overflow-y: auto;
 }
 
 #sidePane hr {

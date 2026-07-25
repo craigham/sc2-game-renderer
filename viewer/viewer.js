@@ -10,11 +10,14 @@
  */
 
 const LOOPS_PER_SECOND = 22.4;
-const MAX_DISPLAY_SIZE = 720; // map pane fits within this many px on its longer side
 // Clickable radius is deliberately more generous than the drawn marker (a 5px dot
 // with a 7px hit area is hard to land in a dense base cluster with dozens of
 // overlapping units) — this is the click target, not the visual glyph.
 const HIT_RADIUS_MIN = 10;
+
+const MIN_ZOOM = 1; // 1 = fit the whole map inside the pane, the old fixed-size behavior
+const MAX_ZOOM = 8;
+const ZOOM_STEP_FACTOR = 1.2; // per wheel notch / +/- keypress
 
 const COLORS = {
   unpathable: [18, 18, 34],
@@ -36,6 +39,7 @@ let selectedTag = null; // persists across frames so the panel follows a unit
 let liveExtractionUrl = null; // set while ?frames=<url> is still mid-extraction; null once finalized
 let livePollTimer = null;
 const LIVE_POLL_INTERVAL_MS = 2000;
+let zoomLevel = MIN_ZOOM;
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
 function abilityName(id) {
@@ -176,13 +180,76 @@ function computeLayout() {
   const [x0, y0, x1, y1] = header.playable_area;
   const extentWidth = x1 - x0;
   const extentHeight = y1 - y0;
-  const scale = MAX_DISPLAY_SIZE / Math.max(extentWidth, extentHeight);
-  transform = { originX: x0, originY: y0, extentWidth, extentHeight, scale };
-
-  const canvas = document.getElementById("mapCanvas");
-  canvas.width = Math.round(extentWidth * scale);
-  canvas.height = Math.round(extentHeight * scale);
+  const pane = document.getElementById("mapPane");
+  // Fit the whole map inside the pane at zoom 1 — the pane fills the browser window
+  // (see viewer.css), so this replaces the old fixed 720px cap.
+  const baseScale = Math.min(pane.clientWidth / extentWidth, pane.clientHeight / extentHeight);
+  transform = { originX: x0, originY: y0, extentWidth, extentHeight, baseScale, scale: baseScale };
+  resizeCanvasToZoom();
 }
+
+function resizeCanvasToZoom() {
+  transform.scale = transform.baseScale * zoomLevel;
+  const canvas = document.getElementById("mapCanvas");
+  canvas.width = Math.round(transform.extentWidth * transform.scale);
+  canvas.height = Math.round(transform.extentHeight * transform.scale);
+}
+
+// Zooms so the world point currently under (anchorClientX, anchorClientY) stays
+// under it after the resize — otherwise every zoom would recenter on the
+// pane's top-left corner instead of wherever the mouse/keyboard zoom was aimed.
+function applyZoom(newZoomLevel, anchorClientX, anchorClientY) {
+  const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoomLevel));
+  if (clamped === zoomLevel || !transform) return;
+
+  const pane = document.getElementById("mapPane");
+  const rect = pane.getBoundingClientRect();
+  const oldWidth = transform.extentWidth * transform.scale;
+  const oldHeight = transform.extentHeight * transform.scale;
+  const fracX = (pane.scrollLeft + (anchorClientX - rect.left)) / oldWidth;
+  const fracY = (pane.scrollTop + (anchorClientY - rect.top)) / oldHeight;
+
+  zoomLevel = clamped;
+  resizeCanvasToZoom();
+  renderFrame(currentIndex);
+
+  const newWidth = transform.extentWidth * transform.scale;
+  const newHeight = transform.extentHeight * transform.scale;
+  pane.scrollLeft = fracX * newWidth - (anchorClientX - rect.left);
+  pane.scrollTop = fracY * newHeight - (anchorClientY - rect.top);
+}
+
+function zoomAtPaneCenter(factor) {
+  const pane = document.getElementById("mapPane");
+  const rect = pane.getBoundingClientRect();
+  applyZoom(zoomLevel * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+document.getElementById("mapPane").addEventListener("wheel", (e) => {
+  if (!transform) return;
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? ZOOM_STEP_FACTOR : 1 / ZOOM_STEP_FACTOR;
+  applyZoom(zoomLevel * factor, e.clientX, e.clientY);
+}, { passive: false });
+
+window.addEventListener("keydown", (e) => {
+  if (!transform) return;
+  if (e.key === "+" || e.key === "=") {
+    e.preventDefault();
+    zoomAtPaneCenter(ZOOM_STEP_FACTOR);
+  } else if (e.key === "-" || e.key === "_") {
+    e.preventDefault();
+    zoomAtPaneCenter(1 / ZOOM_STEP_FACTOR);
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (!header) return;
+  const pane = document.getElementById("mapPane");
+  transform.baseScale = Math.min(pane.clientWidth / transform.extentWidth, pane.clientHeight / transform.extentHeight);
+  resizeCanvasToZoom();
+  renderFrame(currentIndex);
+});
 
 function worldToPixel(x, y) {
   return [
