@@ -225,13 +225,34 @@ Frame count at defaults for a 15-min game: ~5,000.
 At default sampling that's ~3,800 frames — a good size: long enough to be a real game,
 short enough to iterate on.
 
-## Chief risk
+## Chief risk — RESOLVED
 
-Whether python-sc2 can step a replay headlessly on this Mac at all.
+**Local Mac stepping is dead. Extraction runs in a linux/amd64 Docker container.**
 
-This got **materially less risky**: the fixture replay is build `4.10.0.75689`, and
-`/Applications/StarCraft II/Versions/Base75689` is installed locally — an exact match.
-`tbone/watch_replay.py` also already works around the Apple Silicon/Rosetta crash by
-launching SC2 without `base_build`/`data_hash` overrides. Still unproven for *headless*
-stepping, so slice 0 remains a timeboxed spike. It also produces the
-captured-observation fixture that makes every later slice testable without SC2.
+SC2 4.10 (75689) aborts on launch on macOS 26.5.1 — `EXC_CRASH / SIGABRT`, translated
+x86-64, confirmed from the crash report. Rosetta is installed and running, so this is
+the old build being incompatible with current macOS, not a missing translator. That is
+the same breakage that stopped local replay watching. Newer SC2 builds launch, but
+cannot open a 4.10 replay.
+
+The container path works and is fast enough that no Docker settings change is needed:
+
+| | |
+| --- | --- |
+| Image | `sc2-extract:4.10`, from `docker/Dockerfile` |
+| Base | `stephanzlatarev/starcraft` — carries Blizzard's public `SC2.4.10.zip` at `/StarCraftII` (Base75689) |
+| Emulation | QEMU (Docker Desktop Rosetta is **off**; enabling it would only make this faster) |
+| Full extract | 3,809 frames in **218s** stepping, 4m28s wall including SC2 boot |
+| Throughput | 48.6 frames/s early game, 17.4 frames/s sustained (late frames carry ~250 units) |
+
+Two container gotchas, both handled:
+
+- **The map must be mounted.** `UltraloveAIE_v2.SC2Map` comes from the local
+  `/Applications/StarCraft II/Maps`.
+- **python-sc2's `start_replay()` rewrites the path to a basename on Linux**
+  (`sc2/controller.py`), and the client then fails with "Unable to open replay". We
+  issue `RequestStartReplay` ourselves with an absolute path, falling back to
+  `replay_data` bytes.
+
+The two-stage split absorbs all of this: only `extract` needs Docker. `render` stays
+local, pure, and fast to iterate — which is the stage that actually gets iterated.

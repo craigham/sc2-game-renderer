@@ -5,25 +5,18 @@ layer is verified by looking at output frames (no pixel-position assertions).
 
 ---
 
-## Slice 0 — Scaffold + stepping spike (**gate**)
+## Slice 0 — Scaffold + stepping spike (**gate**) — ✅ DONE
 
-The riskiest unknown, done first: can python-sc2 step a replay headlessly on this Mac?
+Outcome: **Mac stepping failed, Docker succeeded.** Extraction runs in a linux/amd64
+container; see `docs/SPEC.md` § Chief risk for the numbers and the two gotchas.
 
-- `uv` project, Python 3.12, pyproject, `.gitignore`, package skeleton.
-- `brew install ffmpeg` (prerequisite, not currently installed).
-- Throwaway script: `start_replay(observed_id=<bot id>)`, fog on, `client.step(N)` in a
-  loop, pull observation, print loop number + own/enemy unit counts.
-- On success, dump ~50 sampled raw observations + `game_info` from the fixture replay
-  to `tests/fixtures/` as the captured-observation fixture.
-
-**Verify:** loop numbers advance and unit counts change over the game; fixture dump
-exists and loads without SC2 running.
-
-**Gate.** If stepping fails on the Mac, stop and choose before building further:
-Docker x86-64 emulation, the Proxmox VM (currently out of scope), or a fallback to
-sc2reader-derived data at reduced fidelity. Every later slice is testable against the
-fixture dump regardless, but without a working extract path there is nothing to render
-from new replays.
+- ✅ `uv` project, Python 3.12, ffmpeg 8.1.2 present.
+- ✅ Local Mac attempt — SC2 4.10 aborts on macOS 26.5.1 (SIGABRT under Rosetta).
+- ✅ `docker/Dockerfile` → `sc2-extract:4.10`.
+- ✅ `scripts/spike_step_replay.py` steps the full fixture replay: 3,809 frames,
+  correct end-of-game detection (`player_id: 2, result: Defeat`, matching `stderr.log`).
+- ✅ Fixture captured to `tests/fixtures/4891371/` — 51 observations + game_info,
+  244 KB, loads on the Mac with no SC2 and no Docker.
 
 ---
 

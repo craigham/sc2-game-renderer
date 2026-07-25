@@ -1,0 +1,26 @@
+[project]
+name = "sc2-game-renderer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Craig Hamilton", email = "craigh@quailholdings.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "burnysc2>=7.3.0",
+    "numpy>=2.5.1",
+    "pillow>=12.3.0",
+]
+
+[project.scripts]
+sc2-game-renderer = "sc2_game_renderer:main"
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

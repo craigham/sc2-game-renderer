@@ -15,3 +15,6 @@ out/
 *.jsonl.gz
 replays/.DS_Store
 .DS_Store
+
+# fixtures are committed (see tests/fixtures/README.md)
+!tests/fixtures/**
