@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Replay/log inputs are not committed — except the one chosen fixture set,
+# which must be force-added (see replays/README.md).
+replays/*/*.SC2Replay
+replays/*/*.jsonl
+replays/*/*.log
+
+# Build outputs
+out/
+*.mp4
+*.jsonl.gz
+replays/.DS_Store
+.DS_Store
