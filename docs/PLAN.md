@@ -215,18 +215,57 @@ frame file confirming the corrected render. This is the second real bug this bui
 has caught by actually looking at output rather than trusting the code once tests
 pass — see slice 1's idle-worker/army-value corrections for the first.
 
-## Slice 8 — Bot-state overlay
+## Slice 8 — Bot-state overlay — ✅ DONE
 
-Positioned log events drawn in the world (builds/trains at their coordinates, pathing
-failures as markers on the failed route endpoints); state banners (income advantage,
-worker danger, evacuation) in the sidebar; a recent-events ticker.
+`src/sc2_game_renderer/bot_state_overlay.py`: `build_overlay(log_text, frame_loops,
+sample_loops)` wires slice 4's parser/classifier/joiner into a queryable
+`BotStateOverlay` — `events_at(loop)` for per-frame event lookup, and
+`resource_belief_at(loop)` (nearest-log-line-at-or-before, since the bot doesn't log
+every single step) for the belief-vs-truth cross-check. `IncomeAdvantageTracker` is
+the one banner treated as persistent state (the log frames it as "is now X"); worker
+danger and evacuation warnings have no "cleared" event in the log, so they're
+rendered only on the exact frame they land on, rather than inventing an ungrounded
+decay timeout.
 
-Includes the belief-vs-truth cross-check: log-reported minerals/gas/supply beside the
-observation's, flagged when they diverge.
+`src/sc2_game_renderer/event_ticker.py`: pure `describe_event` formatter +
+`EventTicker` (rolling recent-events history) — this is what keeps an event visible
+longer than the single frame it's joined to.
 
-**Verify:** at a loop with a known `No path found` line, the frame shows that marker at
-those coordinates; at a known `[TrainSCV] … at (x, y)` the marker sits on the command
-centre; the resource cross-check reads equal during normal play.
+`src/sc2_game_renderer/render_bot_events.py`: positioned world markers — yellow
+diamonds for builds/trains, orange X's (+ a connecting line for `no_path`, at both
+endpoints) for pathing failures.
+
+`render_hud.py` extended with the belief-vs-truth lines (muted when equal, warning-
+colored when they diverge), the persistent income-advantage banner, momentary danger
+warnings, and the ticker.
+
+**Verified — pure layer:** `tests/test_event_ticker.py` (8 tests) and
+`tests/test_bot_state_overlay.py` (13 tests, both a hand-crafted synthetic log and
+the real fixture) — join-to-nearest-frame, empty lookups, mismatched-pairing drop
+counts, nearest-before belief lookup (including before-any-line and after-last-line
+edges), and `IncomeAdvantageTracker`'s metric filtering.
+
+**Verified by eye, exactly per this slice's bar**, via `scripts/preview_frames.py`
+extended with `--log`:
+
+- **`No path found`** (loop 13316): the orange X + connecting line sit precisely at
+  the failed route's two endpoints — which turned out to be right where the enemy
+  army was standing, explaining *why* the path failed.
+- **`[TrainSCV] … at (42.5, 46.5)`** (loop 340): the yellow diamond sits exactly on
+  the command center, confirmed by cropping and zooming into that region.
+- **Resource cross-check reads equal during normal play**: confirmed at loops 12768
+  and 13316 — both show "bot believed" matching truth with no warning color.
+
+**Real discrepancy found, not a bug:** at loop 340, the cross-check flagged a genuine
+divergence — bot believed 5 minerals, true observation was 55, a gap of exactly 50
+(an SCV's cost). Confirmed directly against `stderr.log:27`. This is the actual bot
+internal-state-vs-game-truth timing gap the cross-check exists to catch, not a
+rendering defect — exactly the "separate bad information from bad decisions"
+payoff the spec is built around.
+
+**Known cosmetic limitation, not fixed now:** long state names (e.g.
+"OverwhelmingDisadvantage") overflow the 280px sidebar width. Same category as
+slice 6's label-overlap finding — deferred to the slice 9 polish pass.
 
 ## Slice 9 — `render` CLI → MP4
 

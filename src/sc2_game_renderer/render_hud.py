@@ -1,14 +1,21 @@
 """HUD sidebar: resources, income, supply (+ block duration), workers, idle workers,
 army value, game clock — everything free or cheaply derived from a single Frame plus
-the render-time supply-block duration (supply_block_tracker.py).
+the render-time supply-block duration (supply_block_tracker.py) — plus the bot-state
+overlay (bot_state_overlay.py, event_ticker.py): the belief-vs-truth resource
+cross-check, the persistent income-advantage banner, momentary danger warnings, and
+the recent-events ticker.
 
 `compose_frame` puts the HUD beside a rendered map pane (render_terrain.py +
-render_units.py) at their natural sizes. Fitting the combined image to a final output
-resolution is a slice 9 (`render` CLI) concern, not this one.
+render_units.py + render_bot_events.py) at their natural sizes. Fitting the combined
+image to a final output resolution is a slice 9 (`render` CLI) concern, not this one.
 """
+
+from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
+from sc2_game_renderer.bot_log import BotEvent
+from sc2_game_renderer.bot_state_overlay import ResourceBelief
 from sc2_game_renderer.frame import Frame
 
 BACKGROUND_COLOR = (18, 18, 24)
@@ -32,7 +39,17 @@ def _format_clock(game_loop: int) -> str:
     return f"{total_seconds // 60:02d}:{total_seconds % 60:02d}"
 
 
-def render_hud_panel(frame: Frame, supply_blocked_seconds: float, width: int = DEFAULT_SIDEBAR_WIDTH, height: int = 720) -> Image.Image:
+def render_hud_panel(
+    frame: Frame,
+    supply_blocked_seconds: float,
+    width: int = DEFAULT_SIDEBAR_WIDTH,
+    height: int = 720,
+    *,
+    resource_belief: ResourceBelief | None = None,
+    income_advantage: str | None = None,
+    events_this_frame: tuple[BotEvent, ...] = (),
+    ticker_entries: Sequence[str] = (),
+) -> Image.Image:
     img = Image.new("RGB", (width, height), BACKGROUND_COLOR)
     draw = ImageDraw.Draw(img)
     font = _font()
@@ -45,16 +62,26 @@ def render_hud_panel(frame: Frame, supply_blocked_seconds: float, width: int = D
         draw.text((x, y), text, font=font, fill=color)
         y += LINE_HEIGHT
 
+    def belief_line(believed_value, truth_value):
+        color = TEXT_COLOR if believed_value == truth_value else WARNING_COLOR
+        line(f"  bot believed: {believed_value}", color=color)
+
     line(_format_clock(frame.game_loop), color=TEXT_COLOR)
     y += LINE_HEIGHT // 2
 
     line("Resources", color=LABEL_COLOR)
     line(f"Minerals  {frame.minerals:>5}  ({frame.minerals_rate:.0f}/min)")
+    if resource_belief is not None:
+        belief_line(resource_belief.minerals, frame.minerals)
     line(f"Vespene   {frame.vespene:>5}  ({frame.vespene_rate:.0f}/min)")
+    if resource_belief is not None:
+        belief_line(resource_belief.vespene, frame.vespene)
     y += LINE_HEIGHT // 2
 
     line("Supply", color=LABEL_COLOR)
     line(f"{frame.supply_used}/{frame.supply_cap}")
+    if resource_belief is not None:
+        belief_line(f"{resource_belief.supply_used}/{resource_belief.supply_cap}", f"{frame.supply_used}/{frame.supply_cap}")
     if supply_blocked_seconds > 0:
         line(f"BLOCKED {supply_blocked_seconds:.0f}s", color=WARNING_COLOR)
     y += LINE_HEIGHT // 2
@@ -66,6 +93,24 @@ def render_hud_panel(frame: Frame, supply_blocked_seconds: float, width: int = D
 
     line("Army value", color=LABEL_COLOR)
     line(f"{frame.army_value_minerals}m / {frame.army_value_vespene}g")
+
+    if income_advantage is not None:
+        y += LINE_HEIGHT // 2
+        line("Bot status", color=LABEL_COLOR)
+        line(f"Income advantage: {income_advantage}")
+
+    for event in events_this_frame:
+        d = event.data_dict()
+        if event.kind == "workers_in_danger":
+            line(f"Workers in danger: {d['count']}", color=WARNING_COLOR)
+        elif event.kind == "high_working_danger":
+            line("High working danger — evacuate!", color=WARNING_COLOR)
+
+    if ticker_entries:
+        y += LINE_HEIGHT // 2
+        line("Recent events", color=LABEL_COLOR)
+        for text in ticker_entries:
+            line(text, color=LABEL_COLOR)
 
     return img
 
