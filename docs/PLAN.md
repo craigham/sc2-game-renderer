@@ -267,12 +267,65 @@ payoff the spec is built around.
 "OverwhelmingDisadvantage") overflow the 280px sidebar width. Same category as
 slice 6's label-overlap finding — deferred to the slice 9 polish pass.
 
-## Slice 9 — `render` CLI → MP4
+## Slice 9 — `render` CLI → MP4 — ✅ DONE
 
-Pillow frames → raw RGB → `ffmpeg` stdin → MP4. `--fps`, `--resolution`, `--realtime`.
+`src/sc2_game_renderer/layout.py`: `compute_layout`, pure geometry that fits the map
+pane into (output_resolution − fixed-width sidebar) via letterboxing rather than
+stretching — stretching would silently corrupt every world→pixel position. Feeds
+`render_terrain`/`WorldToPixel` the exact scale needed, and its rounding matches
+theirs exactly, so the map image never needs a resize once rendered — just a paste.
 
-**Verify:** play the MP4 — correct duration, no dropped/duplicated frames, readable at
-1× and when paused.
+`render_hud.assemble_frame` composes the letterboxed map + HUD into one frame
+guaranteed to be exactly (output_width, output_height) — the property that makes it
+safe to pipe straight to ffmpeg as fixed-size rawvideo.
+
+`src/sc2_game_renderer/cli_render.py`: the full pipeline — one upfront pass over the
+frame file to collect game loops (for the bot-log join), then a second pass per
+frame running every render-time tracker from slices 6-8 (trails, supply-block
+duration, income-advantage state, event ticker) and piping raw RGB straight to
+`ffmpeg -f rawvideo ... -i - ... out.mp4`. `-loglevel error` keeps ffmpeg's stderr
+pipe empty in the normal case, avoiding a real deadlock risk (ffmpeg blocking on a
+full stderr pipe while this process blocks writing more stdin) without needing a
+separate reader thread.
+
+**Bugs found and fixed by actually running it, not just reading the code:**
+
+1. Calling `proc.communicate()` after manually closing `proc.stdin` raised
+   `ValueError: flush of closed file` — `communicate()` tries to close stdin itself.
+   Fixed to `stdin.close(); wait(); stderr.read()` instead. (The MP4 itself was
+   already correct when this hit — ffmpeg had already exited — but the CLI itself
+   crashed on cleanup, which would be confusing to hit for real.)
+2. `--realtime` rounded 5.6fps (`22.4 / sample_loops=4`) to 6fps, which ran the
+   fixture's full replay in 634.8s instead of the true 680.0s game length — a 7%
+   speedup that would make "realtime" a misnomer. Fixed by passing the exact
+   fractional rate straight to ffmpeg's `-r` (it accepts non-integer rates natively)
+   instead of rounding for display. Confirmed via ffprobe: `r_frame_rate=28/5`
+   (exactly 5.6), duration 680.18s — matching the game length to within one frame
+   interval.
+
+**Verified — pure layout math:** `tests/test_layout.py`, 5 tests — square-into-square
+(no letterbox), wide-map and tall-map letterboxing in both axes, and the real
+fixture's actual shape (square map, 1280×720 output, 280px sidebar) producing the
+exact expected offset.
+
+**Verified — the real thing, end to end**, against the full fixture replay:
+
+| | Default (`--fps 30`) | `--realtime` |
+| --- | --- | --- |
+| Frames | 3,809 | 3,809 |
+| Resolution | 1280×720 | 1280×720 |
+| `r_frame_rate` (ffprobe) | 30/1 | 28/5 (= 5.6 exactly) |
+| Duration (ffprobe) | 126.966016s | 680.178571s |
+| Expected | 3809/30 = 126.9667s ✓ | ≈15232/22.4 = 680.0s ✓ (within one frame interval) |
+
+No dropped or duplicated frames — `render()` asserts the written count equals the
+frame file's own frame count before returning. **Readable when paused:** extracted
+exact frames from the encoded MP4 with `ffmpeg -vf select=eq(n\,N)` (frame-accurate;
+plain `-ss` before `-i` does fast keyframe-only seeking and landed on the wrong
+frame the first time this was tried) at frame 85 (loop 340) and frame 3192 (loop
+12768) — both reproduce slice 7/8's documented values exactly, byte-for-byte,
+confirming the encode is faithful: minerals 55/believed 5, and 125/125/supply
+81:118, respectively.
 
 ## Slice 10 — Performance pass *(only if needed)*
 

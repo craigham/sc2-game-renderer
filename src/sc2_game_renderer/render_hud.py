@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from sc2_game_renderer.bot_log import BotEvent
 from sc2_game_renderer.bot_state_overlay import ResourceBelief
 from sc2_game_renderer.frame import Frame
+from sc2_game_renderer.layout import Layout
 
 BACKGROUND_COLOR = (18, 18, 24)
 TEXT_COLOR = (225, 225, 230)
@@ -125,3 +126,15 @@ def compose_frame(map_image: Image.Image, hud_panel: Image.Image) -> Image.Image
     combined.paste(map_image, (0, 0))
     combined.paste(hud_panel, (map_image.width, 0))
     return combined
+
+
+def assemble_frame(layout: Layout, map_image: Image.Image, hud_panel: Image.Image) -> Image.Image:
+    """Letterboxes `map_image` (already rendered at `layout.map_scale`, so its size
+    should exactly match `layout.rendered_width/height` — see layout.py) into the
+    output-resolution pane, then composes it with the HUD sidebar. Always produces
+    exactly (layout.output_width, layout.output_height), which is what makes this
+    safe to pipe straight to ffmpeg as fixed-size rawvideo frames.
+    """
+    pane = Image.new("RGB", (layout.map_pane_width, layout.output_height), BACKGROUND_COLOR)
+    pane.paste(map_image, (layout.map_offset_x, layout.map_offset_y))
+    return compose_frame(pane, hud_panel)
