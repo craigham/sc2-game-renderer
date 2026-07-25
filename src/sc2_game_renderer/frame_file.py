@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
+import numpy as np
+
 from sc2_game_renderer.enemy_memory import RememberedEnemy
 from sc2_game_renderer.frame import Frame, UnitSnapshot
 
@@ -34,6 +36,17 @@ class TerrainGrid:
             bits_per_pixel=image_data.bits_per_pixel,
             data_base64=base64.b64encode(image_data.data).decode("ascii"),
         )
+
+    def to_numpy(self) -> np.ndarray:
+        """Row-major, shape (height, width) — row index is world y, same convention
+        as the vendored python-sc2 PixelMap this mirrors. 1bpp grids (pathing,
+        placement) unpack to 0/1 per cell; 8bpp (terrain height) is already one byte
+        per cell.
+        """
+        buf = np.frombuffer(base64.b64decode(self.data_base64), dtype=np.uint8)
+        if self.bits_per_pixel == 1:
+            buf = np.unpackbits(buf)
+        return buf.reshape(self.height, self.width)
 
 
 @dataclass(frozen=True, slots=True)

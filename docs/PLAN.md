@@ -119,13 +119,34 @@ join, 0 dropped** — confirms the replay and the log are genuinely the same gam
 the frame file's sampling interval). A deliberately mismatched pairing (real events
 against a disjoint frame_loops range) drops all 722, as the design requires.
 
-## Slice 5 — Static terrain background
+## Slice 5 — Static terrain background — ✅ DONE
 
-Render `pathing_grid` / `placement_grid` / `terrain_height` + start locations to one
-PNG. Establishes the world→pixel transform used by everything after.
+`src/sc2_game_renderer/coords.py`: `WorldToPixel`, the world↔pixel transform every
+later rendering slice reuses. Crops to `playable_area` (only ~72% of the full grid on
+the fixture map — the rest is unpathable border, not worth canvas) and flips
+vertically, since SC2's y axis increases north but image rows increase downward. The
+flip direction is confirmed against the vendored python-sc2 `PixelMap` (its own
+`.plot()` uses `origin="lower"`, i.e. raw row 0 is y=0/south) rather than guessed.
 
-**Verify:** open the PNG — ramps, cliffs, and unbuildable areas are legible and the
-map is the right way up.
+`src/sc2_game_renderer/render_terrain.py`: height as grayscale, unpathable cells
+(cliffs/water) near-black, pathable-but-unbuildable cells (ramps) blue-tinted, start
+locations as red-ring markers.
+
+**Verified — pure transform math** (allowed under non-goal 9; this is geometry, not
+an assertion on rendered pixels): `tests/test_coords.py`, 7 tests — corner mapping in
+all four directions (the north/south flip is exactly the kind of thing that's easy to
+get backwards), scale, and that out-of-bounds points aren't clamped.
+
+**Verified by eye:** `scripts/preview_terrain.py` against the real fixture's frame
+file. Result — elevated plateaus at distinct gray levels, diagonal blue-tinted ramps
+connecting them, black cliff gaps, one red start-location marker, and the map's
+2-player rotational symmetry all clearly legible.
+
+**Observation, not a bug:** `game_info.start_raw.start_locations` returns only
+**one** location (ours) despite 2 players in `player_info` — SC2 withholds the
+opponent's start location from `RequestGameInfo` itself under fog. Consistent with
+this tool's whole premise (render only what the bot could see), so left as-is rather
+than "fixed".
 
 ## Slice 6 — Unit rendering + trails
 
