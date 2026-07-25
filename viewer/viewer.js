@@ -33,6 +33,9 @@ let transform = null; // world<->pixel, see computeLayout()
 let terrainCanvas = null; // offscreen, rendered once per loaded file
 let hitTargets = []; // rebuilt every renderFrame() call, for click hit-testing
 let selectedTag = null; // persists across frames so the panel follows a unit
+let liveExtractionUrl = null; // set while ?frames=<url> is still mid-extraction; null once finalized
+let livePollTimer = null;
+const LIVE_POLL_INTERVAL_MS = 2000;
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
 function abilityName(id) {
@@ -48,7 +51,7 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   if (!file) return;
   setStatus(`Decompressing ${file.name}...`);
   try {
-    const text = await decompressToText(file);
+    const text = await decompressStreamToText(file.stream());
     parseFrameFile(text, file.name);
   } catch (err) {
     setStatus(`Failed to load ${file.name}: ${err.message}`);
@@ -56,12 +59,92 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   }
 });
 
-async function decompressToText(file) {
-  // Browser-native gzip decompression — no library, works on a File directly
-  // (unlike fetch(), which most browsers block for local file:// pages, this is
-  // exactly why the frame file is loaded via <input type="file">, not fetch()).
-  const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
-  return await new Response(stream).text();
+// A `?frames=<url>` query param loads a frame file over fetch() instead of the
+// file picker — for pages served over real http(s), not local file:// (which is
+// what the file-input path above exists to work around; fetch() is fine here).
+const framesUrl = new URLSearchParams(window.location.search).get("frames");
+if (framesUrl) loadFromUrl(framesUrl);
+
+async function loadFromUrl(url) {
+  setStatus(`Fetching ${url}...`);
+  try {
+    const { text, stillExtracting } = await fetchFrameText(url);
+    parseFrameFile(text, url);
+    if (stillExtracting) {
+      setStatus(`${header.map_name}, ${frames.length} frames, bot_player_id=${header.bot_player_id} (extracting…)`);
+      liveExtractionUrl = url;
+      scheduleLivePoll();
+    }
+  } catch (err) {
+    setStatus(`Failed to load ${url}: ${err.message}`);
+    console.error(err);
+  }
+}
+
+async function fetchFrameText(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  // While a match is still being extracted, the server serves plain, uncompressed
+  // ndjson (frames land on disk incrementally — see FrameFileWriter in
+  // frame_file.py) instead of the finalized frames.jsonl.gz, so playback can
+  // start well before the whole game has been stepped. Content-Type says which:
+  // application/gzip once finalized, application/x-ndjson while still running.
+  const contentType = response.headers.get("Content-Type") || "";
+  const stillExtracting = !contentType.includes("gzip");
+  const text = stillExtracting ? await response.text() : await decompressStreamToText(response.body);
+  return { text, stillExtracting };
+}
+
+function scheduleLivePoll() {
+  if (livePollTimer) clearTimeout(livePollTimer);
+  livePollTimer = setTimeout(pollLiveExtraction, LIVE_POLL_INTERVAL_MS);
+}
+
+async function pollLiveExtraction() {
+  if (!liveExtractionUrl) return;
+  try {
+    const { text, stillExtracting } = await fetchFrameText(liveExtractionUrl);
+    extendFrames(text, stillExtracting);
+    if (stillExtracting) {
+      scheduleLivePoll();
+    } else {
+      liveExtractionUrl = null; // finalized — this was the last fetch needed
+    }
+  } catch (err) {
+    // Transient (e.g. caught the server mid-write) — just retry on the next tick.
+    console.error(err);
+    scheduleLivePoll();
+  }
+}
+
+// Extends the in-memory frame list from a fresh fetch without resetting playback
+// position or the selected-unit panel the way a full parseFrameFile() load would —
+// this runs every couple seconds while a match is still being watched live.
+function extendFrames(text, stillExtracting) {
+  const lines = text.split("\n").filter((l) => l.length > 0);
+  const newFrames = lines.slice(1).map((l) => JSON.parse(l));
+  const wasAtLiveEdge = currentIndex === frames.length - 1;
+  const grew = newFrames.length > frames.length;
+  frames = newFrames;
+
+  const scrub = document.getElementById("scrubBar");
+  scrub.max = frames.length - 1;
+
+  const suffix = stillExtracting ? " (extracting…)" : "";
+  setStatus(`${header.map_name}, ${frames.length} frames, bot_player_id=${header.bot_player_id}${suffix}`);
+
+  if (grew && wasAtLiveEdge) {
+    renderFrame(frames.length - 1); // follow the live edge if that's where we were
+  } else {
+    updateScrubUI(currentIndex, frames[currentIndex]); // keep the frame counter label fresh either way
+  }
+}
+
+async function decompressStreamToText(stream) {
+  // Browser-native gzip decompression — no library. Works on any
+  // ReadableStream, whether it comes from a File (file-input path) or a
+  // fetch() Response body (?frames=<url> path).
+  return await new Response(stream.pipeThrough(new DecompressionStream("gzip"))).text();
 }
 
 function parseFrameFile(text, filename) {

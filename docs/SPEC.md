@@ -29,8 +29,13 @@ truth.
    comparison mode is a plausible v2, deliberately deferred.)
 4. **No live/real-time viewing.** Batch: replay in, MP4 out.
 5. **No interactivity.** No scrubbing, seeking, clicking units. It's a video file.
-6. **No Proxmox / remote execution in v1.** Local Mac only. If it later moves to that
-   server it goes in a VM or LXC — never installed on the host.
+6. **No Proxmox / remote execution in v1.** Local Mac only.
+   **Superseded**: `extract` now also runs on `test_lab` (192.168.1.15), driven by
+   `sc_bot_test_lab`'s replay-render view, so the vs-Blizzard-AI matches run there can
+   be inspected without copying files back to this Mac. Still Docker-contained, never
+   installed on that host directly — consistent with how `test_lab` already runs every
+   other SC2 process — so the "never on bare metal" spirit of this non-goal holds even
+   though the "local Mac only" letter of it doesn't anymore.
 7. **No changes to the tbone bot repo.** This tool consumes tbone's existing log
    output; it does not add instrumentation to it. If a needed field is missing, that
    is reported, not patched from here.

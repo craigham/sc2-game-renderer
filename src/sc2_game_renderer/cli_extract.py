@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sc2_game_renderer.enemy_memory import EnemyMemory
 from sc2_game_renderer.frame import frame_from_observation
-from sc2_game_renderer.frame_file import ExtractedFrame, GameHeader, write_frame_file
+from sc2_game_renderer.frame_file import ExtractedFrame, FrameFileWriter, GameHeader
 from sc2_game_renderer.sc2_stepper import ReplaySession
 
 DEFAULT_SAMPLE_LOOPS = 4
@@ -39,17 +39,23 @@ async def extract(
             memory_ttl_seconds=memory_ttl_seconds,
         )
 
-        extracted: list[ExtractedFrame] = []
-        async for obs in session.observations(sample_loops):
-            frame = frame_from_observation(obs)
-            memory.update(frame)
-            extracted.append(
-                ExtractedFrame(frame=frame, remembered_enemies=tuple(memory.remembered(frame.game_loop)))
-            )
-            if max_frames is not None and len(extracted) >= max_frames:
-                break
+        # Streamed straight to disk frame-by-frame (FrameFileWriter) rather than
+        # buffered into a list and written once at the end — lets a consumer (e.g.
+        # a web server) show the replay while it's still being extracted instead of
+        # only once the whole game has been stepped.
+        count = 0
+        with FrameFileWriter(out, header) as writer:
+            async for obs in session.observations(sample_loops):
+                frame = frame_from_observation(obs)
+                memory.update(frame)
+                writer.write(
+                    ExtractedFrame(frame=frame, remembered_enemies=tuple(memory.remembered(frame.game_loop)))
+                )
+                count += 1
+                if max_frames is not None and count >= max_frames:
+                    break
 
-    return write_frame_file(out, header, extracted)
+    return count
 
 
 def main() -> None:

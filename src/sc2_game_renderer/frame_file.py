@@ -9,6 +9,8 @@ import base64
 import dataclasses
 import gzip
 import json
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
@@ -138,23 +140,100 @@ def _extracted_frame_from_dict(d: dict) -> ExtractedFrame:
     return ExtractedFrame(frame=frame, remembered_enemies=remembered)
 
 
+def _header_record(header: GameHeader) -> dict:
+    return {"kind": "header", **dataclasses.asdict(header)}
+
+
+def _frame_record(ef: ExtractedFrame) -> dict:
+    return {
+        "kind": "frame",
+        **dataclasses.asdict(ef.frame),
+        "remembered_enemies": [
+            {"unit": dataclasses.asdict(r.unit), "last_seen_loop": r.last_seen_loop}
+            for r in ef.remembered_enemies
+        ],
+    }
+
+
 def write_frame_file(path: Path, header: GameHeader, frames: Iterable[ExtractedFrame]) -> int:
     """Streams `frames` straight to disk — never holds the whole game in memory."""
     count = 0
     with gzip.open(path, "wt", encoding="utf-8") as f:
-        f.write(json.dumps({"kind": "header", **dataclasses.asdict(header)}) + "\n")
+        f.write(json.dumps(_header_record(header)) + "\n")
         for ef in frames:
-            record = {
-                "kind": "frame",
-                **dataclasses.asdict(ef.frame),
-                "remembered_enemies": [
-                    {"unit": dataclasses.asdict(r.unit), "last_seen_loop": r.last_seen_loop}
-                    for r in ef.remembered_enemies
-                ],
-            }
-            f.write(json.dumps(record) + "\n")
+            f.write(json.dumps(_frame_record(ef)) + "\n")
             count += 1
     return count
+
+
+class FrameFileWriter:
+    """Streaming writer that lets a frame file be watched while it's still being
+    extracted, instead of only once the whole replay has been stepped.
+
+    Frames land in a plain, uncompressed `<path>.tmp` as they're written, flushed
+    after every single write — so the file on disk always ends on a complete line,
+    and a concurrent reader can safely serve it up to whatever the current size is
+    at any moment, no byte-offset bookkeeping required. A `<path>.progress.json`
+    sidecar (rewritten at most twice a second, not every frame) records the frame
+    count and done/error state, so a consumer (e.g. a web server polling for "is
+    there more yet") doesn't have to open the growing frame file itself just to
+    answer that.
+
+    On a clean exit, the accumulated file is compressed into `path` itself — the
+    exact same frames.jsonl.gz format write_frame_file/FrameFileReader already
+    produce and consume, so nothing downstream changes for the finished case. On
+    an exception, whatever was captured so far is still compressed and kept (a
+    crash partway through a game leaves a valid, playable partial replay, not
+    nothing) and the sidecar is left with done=False, error=<message>; the
+    exception itself is not suppressed.
+
+        with FrameFileWriter(path, header) as w:
+            for ef in frames:
+                w.write(ef)
+    """
+
+    _PROGRESS_UPDATE_INTERVAL = 0.5  # seconds — throttles sidecar rewrites, not the frame writes themselves
+
+    def __init__(self, path: Path, header: GameHeader):
+        self._path = Path(path)
+        self._tmp_path = Path(str(self._path) + ".tmp")
+        self._progress_path = Path(str(self._path) + ".progress.json")
+        self._header = header
+        self._count = 0
+        self._f = None
+        self._last_progress_write = 0.0
+
+    def __enter__(self) -> "FrameFileWriter":
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._f = open(self._tmp_path, "w", encoding="utf-8")
+        self._f.write(json.dumps(_header_record(self._header)) + "\n")
+        self._f.flush()
+        self._write_progress(done=False, error=None)
+        self._last_progress_write = time.monotonic()
+        return self
+
+    def write(self, ef: ExtractedFrame) -> None:
+        self._f.write(json.dumps(_frame_record(ef)) + "\n")
+        self._f.flush()
+        self._count += 1
+        now = time.monotonic()
+        if now - self._last_progress_write >= self._PROGRESS_UPDATE_INTERVAL:
+            self._write_progress(done=False, error=None)
+            self._last_progress_write = now
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self._f.close()
+        try:
+            with open(self._tmp_path, encoding="utf-8") as src, gzip.open(self._path, "wt", encoding="utf-8") as dst:
+                shutil.copyfileobj(src, dst)
+        finally:
+            self._tmp_path.unlink(missing_ok=True)
+        self._write_progress(done=exc_type is None, error=None if exc_type is None else str(exc))
+
+    def _write_progress(self, *, done: bool, error: str | None) -> None:
+        tmp = Path(str(self._progress_path) + ".tmp")
+        tmp.write_text(json.dumps({"frames_written": self._count, "done": done, "error": error}))
+        tmp.replace(self._progress_path)
 
 
 class FrameFileReader:

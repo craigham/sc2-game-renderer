@@ -15,6 +15,11 @@ No server, no build step, no npm.
 Requires a browser with `DecompressionStream` (Chrome/Edge 80+, Firefox 113+, Safari
 16.4+) — all recent.
 
+Alternatively, when this page is served over real http(s) (not `file://`), passing
+`?frames=<url>` loads that frame file automatically via `fetch()`, skipping the file
+picker — e.g. `index.html?frames=/frames/1234.frames.jsonl.gz`. This is how
+`sc_bot_test_lab`'s replay-render view drives it.
+
 ## What it does and doesn't show
 
 Same visual language as the Python renderer (`render_terrain.py` / `render_units.py`):
