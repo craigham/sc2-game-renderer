@@ -98,15 +98,21 @@ Free from the observation, per frame:
 - Own units: position, type, health/shields fraction, energy.
 - Enemy units: the three categories above.
 - Resources: minerals, vespene, income rates.
-- Supply used / cap, worker count, army value.
+- Supply used / cap, worker count, idle worker count (`player_common.idle_worker_count`
+  — turned out to be a direct field, not derived as originally assumed).
+- Army value: `score.score_details.used_minerals/vespene.army` — SC2's own running
+  spent-minus-lost tally (the same figure the client's built-in graphs use), not a
+  recomputation from unit type costs. Also free, also not derived.
 - Terrain, drawn once as a static background layer from `game_info`:
   `pathing_grid`, `placement_grid`, `terrain_height`, `playable_area`,
   `start_locations`.
 
 Derived per frame:
 
-- Supply-blocked (and running block duration).
-- Idle worker count.
+- `supply_blocked: bool` (`supply_used >= supply_cap` below the 200 hard cap) —
+  computable from a single observation.
+- Supply-block **duration** — needs the frame sequence, not a single observation, so
+  it's computed at render time by scanning consecutive frames, not in the frame file.
 - Movement trails: last N sampled positions per own unit, faded by age.
 
 ## Bot-state overlay
