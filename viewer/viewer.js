@@ -69,6 +69,26 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   }
 });
 
+// A `?log=<url>` query param loads the bot log over fetch() the same way, for the
+// same reason `?frames=<url>` exists: the log lives on the server that's serving
+// this page, not on whatever machine is viewing it, so the file-input picker
+// can't reach it. Unlike frames there's no live-extraction case to poll for —
+// the log is a static artifact of a match that already finished.
+const logUrl = new URLSearchParams(window.location.search).get("log");
+if (logUrl) loadLogFromUrl(logUrl);
+
+async function loadLogFromUrl(url) {
+  setLogStatus(`Fetching ${url}...`);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    parseLogFile(await response.text(), url);
+  } catch (err) {
+    setLogStatus(`Failed to load ${url}: ${err.message}`);
+    console.error(err);
+  }
+}
+
 // A `?frames=<url>` query param loads a frame file over fetch() instead of the
 // file picker — for pages served over real http(s), not local file:// (which is
 // what the file-input path above exists to work around; fetch() is fine here).
