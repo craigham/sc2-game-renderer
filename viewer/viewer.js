@@ -429,7 +429,15 @@ function renderFrame(index) {
 // Mirrors render_units.py's _radius_px: real per-unit radius (from the
 // observation) scaled to pixels, so structures (radius ~2-3) are visibly larger
 // than mobile units (radius ~0.375-0.75) without needing a separate marker shape.
+const LEGACY_MARKER_SCALE = 0.9; // fixed marker size used before the radius field existed
+
 function markerRadius(u) {
+  // Frame files extracted before this field was added have no `radius` at all —
+  // `undefined * transform.scale` is NaN, and Math.max(_, NaN) is NaN, which
+  // canvas silently draws nothing for. Fall back to the old fixed size so an
+  // already-cached match (there are ~20+ on test_lab as of this change) still
+  // renders every unit instead of quietly going invisible.
+  if (u.radius == null) return Math.max(MIN_MARKER_RADIUS_PX, transform.scale * LEGACY_MARKER_SCALE);
   return Math.max(MIN_MARKER_RADIUS_PX, u.radius * transform.scale);
 }
 
