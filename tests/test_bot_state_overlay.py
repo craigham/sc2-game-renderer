@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from sc2_game_renderer.bot_log import BotEvent
-from sc2_game_renderer.bot_state_overlay import IncomeAdvantageTracker, build_overlay
+from sc2_game_renderer.bot_state_overlay import BuildDetectorTracker, GameAnalyzerTracker, build_overlay
 
 STDERR_LOG = Path(__file__).parent.parent / "replays" / "4891371" / "stderr.log"
 
@@ -73,30 +73,63 @@ def test_resource_belief_at_after_last_log_line_uses_last_known():
     assert (belief.minerals, belief.vespene, belief.supply_used, belief.supply_cap) == (80, 20, 14, 15)
 
 
-# --- IncomeAdvantageTracker ---------------------------------------------------------
+# --- GameAnalyzerTracker -------------------------------------------------------------
 
-def test_income_advantage_tracker_starts_none():
-    assert IncomeAdvantageTracker().state is None
+def test_game_analyzer_tracker_starts_empty():
+    assert GameAnalyzerTracker().state == {}
 
 
-def test_income_advantage_tracker_updates_to_latest_value():
-    tracker = IncomeAdvantageTracker()
+def test_game_analyzer_tracker_tracks_each_metric_independently():
+    tracker = GameAnalyzerTracker()
+    tracker.update([
+        BotEvent("advantage", 0, data=(("metric", "Income advantage"), ("state", "SmallDisadvantage"))),
+        BotEvent("advantage", 0, data=(("metric", "Known army advantage"), ("state", "Even"))),
+    ])
+    assert tracker.state == {"Income advantage": "SmallDisadvantage", "Known army advantage": "Even"}
+
+
+def test_game_analyzer_tracker_updates_to_latest_value_per_metric():
+    tracker = GameAnalyzerTracker()
     tracker.update([BotEvent("advantage", 0, data=(("metric", "Income advantage"), ("state", "SmallDisadvantage")))])
-    assert tracker.state == "SmallDisadvantage"
     tracker.update([BotEvent("advantage", 20, data=(("metric", "Income advantage"), ("state", "SlightAdvantage")))])
-    assert tracker.state == "SlightAdvantage"
+    assert tracker.state["Income advantage"] == "SlightAdvantage"
 
 
-def test_income_advantage_tracker_ignores_other_advantage_metrics():
-    tracker = IncomeAdvantageTracker()
-    tracker.update([BotEvent("advantage", 0, data=(("metric", "Known army advantage"), ("state", "SlightAdvantage")))])
-    assert tracker.state is None
-
-
-def test_income_advantage_tracker_ignores_unrelated_events():
-    tracker = IncomeAdvantageTracker()
+def test_game_analyzer_tracker_ignores_unrelated_events():
+    tracker = GameAnalyzerTracker()
     tracker.update([BotEvent("workers_in_danger", 0, data=(("count", 1),))])
-    assert tracker.state is None
+    assert tracker.state == {}
+
+
+# --- BuildDetectorTracker ------------------------------------------------------------
+
+def test_build_detector_tracker_starts_empty():
+    tracker = BuildDetectorTracker()
+    assert tracker.recognized_build is None
+    assert tracker.possible_rushes == []
+
+
+def test_build_detector_tracker_updates_recognized_build():
+    tracker = BuildDetectorTracker()
+    tracker.update([BotEvent("build_recognized", 0, data=(("build", "Mutalisks"),))])
+    assert tracker.recognized_build == "Mutalisks"
+    tracker.update([BotEvent("build_recognized", 100, data=(("build", "BattleCruisers"),))])
+    assert tracker.recognized_build == "BattleCruisers"
+
+
+def test_build_detector_tracker_accumulates_distinct_rush_flags():
+    tracker = BuildDetectorTracker()
+    tracker.update([BotEvent("possible_rush", 0, data=(("rush", "OneBaseRax"),))])
+    tracker.update([BotEvent("possible_rush", 4, data=(("rush", "ProxyZealots"),))])
+    assert tracker.possible_rushes == ["OneBaseRax", "ProxyZealots"]
+
+
+def test_build_detector_tracker_does_not_duplicate_a_repeated_rush_flag():
+    # Real logs show the same rush flagged repeatedly across consecutive frames.
+    tracker = BuildDetectorTracker()
+    tracker.update([BotEvent("possible_rush", 0, data=(("rush", "OneBaseRax"),))])
+    tracker.update([BotEvent("possible_rush", 4, data=(("rush", "OneBaseRax"),))])
+    assert tracker.possible_rushes == ["OneBaseRax"]
 
 
 # --- real fixture: end-to-end -------------------------------------------------------

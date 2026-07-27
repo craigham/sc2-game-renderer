@@ -58,12 +58,31 @@ snapshotted forever once first seen either — one was observed going fully abse
 several minutes, then reappearing later. Not chased further here; worth keeping in
 mind if `enemy_snapshot` ever seems to have fewer entries than expected.)
 
-The log panel shows raw parsed lines (loop, clock, level, logger, message) only.
-**Not included, on purpose:** the classified bot-state overlay — positioned
-build/pathing events, banners, the recent-events ticker, and the belief-vs-truth
-resource cross-check. Those are MP4-only for now (`render --log`). Porting
-`bot_log.py`'s event classifier to JS would roughly double this addition's scope;
-worth doing later if wanted, not bundled into this pass.
+**Weapon range circle:** clicking a unit with a weapon draws a dashed circle at its
+real range (from SC2's own game data, `UnitTypeData.weapons` — max across all of a
+unit's weapons if it has more than one, e.g. a Thor's separate ground/air ranges).
+Zero for unarmed units (most workers/structures) — no circle, not an error. Frame
+files extracted before this field existed have no `weapon_range` at all; the check is
+`> 0`, which is `false` for `undefined` too, so those just don't show a circle rather
+than throwing.
+
+**Game Analyzer / Build Detector summary**, in its own panel below the HUD: the
+bot's persistent last-known state — each `[GameAnalyzer]` metric (Income/Known
+army/Predicted army advantage) at its latest value, plus `terranbot/managers/
+build_detector.py`'s recognized enemy build and any flagged rush hypotheses (these
+only ever accumulate — the log has no "ruled out" event). This is recomputed **as of
+the currently paused frame's game loop**, not the whole game at once, so scrubbing
+backward genuinely shows what was known then, not future knowledge (verified
+directly: an event placed after the paused frame in a synthetic log correctly does
+not appear).
+
+The log panel itself shows raw parsed lines (loop, clock, level, logger, message).
+**Still not included:** the rest of the classified bot-state overlay — positioned
+build/pathing events, the recent-events ticker, and the belief-vs-truth resource
+cross-check. Those stay MP4-only (`render --log`) for now. The Game Analyzer/Build
+Detector summary above is a deliberately scoped subset of `bot_log.py`'s classifier
+(3 event kinds, not the full whitelist) — porting the rest would still meaningfully
+grow this addition's scope; worth doing later if wanted, not bundled into this pass.
 
 **Current order(s):** SC2 only ever reports a unit's queued order for units you own
 — an enemy's order would leak intel straight through fog, so it's simply absent from

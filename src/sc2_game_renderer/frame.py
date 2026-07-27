@@ -34,6 +34,9 @@ class UnitSnapshot:
     # From SC2's own game data (the Structure attribute), not guessed from radius or
     # health — some large-radius units (Thor, Ultralisk, Colossus) aren't structures.
     is_structure: bool
+    # Max range across the unit type's weapons (0.0 if unarmed) — also from game
+    # data, not the observation itself (no per-unit range field exists there).
+    weapon_range: float
     # SC2 only ever populates orders for the observing player's own units — an enemy
     # unit's queued order is exactly the kind of intel fog is supposed to hide, and
     # this was confirmed against the fixture (0 of 69 enemy units had any order vs.
@@ -84,7 +87,7 @@ def _order(o: raw_pb2.UnitOrder) -> UnitOrder:
     )
 
 
-def _unit(u: raw_pb2.Unit, structure_type_ids: frozenset[int]) -> UnitSnapshot:
+def _unit(u: raw_pb2.Unit, structure_type_ids: frozenset[int], weapon_ranges: dict[int, float]) -> UnitSnapshot:
     return UnitSnapshot(
         tag=u.tag,
         unit_type=u.unit_type,
@@ -98,6 +101,7 @@ def _unit(u: raw_pb2.Unit, structure_type_ids: frozenset[int]) -> UnitSnapshot:
         energy_max=u.energy_max,
         radius=u.radius,
         is_structure=u.unit_type in structure_type_ids,
+        weapon_range=weapon_ranges.get(u.unit_type, 0.0),
         orders=tuple(_order(o) for o in u.orders),
     )
 
@@ -105,6 +109,7 @@ def _unit(u: raw_pb2.Unit, structure_type_ids: frozenset[int]) -> UnitSnapshot:
 def frame_from_observation(
     response_observation: sc2api_pb2.ResponseObservation,
     structure_type_ids: frozenset[int] = frozenset(),
+    weapon_ranges: dict[int, float] = {},  # noqa: B006 — never mutated, read-only lookup
 ) -> Frame:
     obs = response_observation.observation
 
@@ -113,12 +118,12 @@ def frame_from_observation(
     enemy_snapshot: list[UnitSnapshot] = []
     for u in obs.raw_data.units:
         if u.alliance == raw_pb2.Self:
-            own.append(_unit(u, structure_type_ids))
+            own.append(_unit(u, structure_type_ids, weapon_ranges))
         elif u.alliance == raw_pb2.Enemy:
             if u.display_type == raw_pb2.Visible:
-                enemy_visible.append(_unit(u, structure_type_ids))
+                enemy_visible.append(_unit(u, structure_type_ids, weapon_ranges))
             elif u.display_type == raw_pb2.Snapshot:
-                enemy_snapshot.append(_unit(u, structure_type_ids))
+                enemy_snapshot.append(_unit(u, structure_type_ids, weapon_ranges))
 
     pc = obs.player_common
     sd = obs.score.score_details

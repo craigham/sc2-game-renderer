@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sc2_game_renderer.bot_state_overlay import IncomeAdvantageTracker, build_overlay
+from sc2_game_renderer.bot_state_overlay import BuildDetectorTracker, GameAnalyzerTracker, build_overlay
 from sc2_game_renderer.coords import WorldToPixel
 from sc2_game_renderer.event_ticker import EventTicker
 from sc2_game_renderer.frame_file import FrameFileReader
@@ -83,7 +83,8 @@ def render(
 
     trail_tracker = TrailTracker()
     supply_tracker = SupplyBlockTracker()
-    income_tracker = IncomeAdvantageTracker()
+    game_analyzer_tracker = GameAnalyzerTracker()
+    build_detector_tracker = BuildDetectorTracker()
     ticker = EventTicker()
 
     written = 0
@@ -94,7 +95,8 @@ def render(
             blocked_seconds = supply_tracker.update(frame)
 
             events_here = overlay.events_at(frame.game_loop) if overlay is not None else ()
-            income_tracker.update(events_here)
+            game_analyzer_tracker.update(events_here)
+            build_detector_tracker.update(events_here)
             ticker.update(events_here)
 
             map_img = render_units(background, transform, extracted, trail_tracker.trails())
@@ -103,7 +105,9 @@ def render(
                 frame, blocked_seconds, width=sidebar_width, height=height,
                 opponent_description=header.opponent.describe(),
                 resource_belief=overlay.resource_belief_at(frame.game_loop) if overlay is not None else None,
-                income_advantage=income_tracker.state,
+                game_analyzer=game_analyzer_tracker.state,
+                recognized_build=build_detector_tracker.recognized_build,
+                possible_rushes=build_detector_tracker.possible_rushes,
                 events_this_frame=events_here,
                 ticker_entries=ticker.entries(),
             )

@@ -48,7 +48,9 @@ def render_hud_panel(
     *,
     opponent_description: str | None = None,
     resource_belief: ResourceBelief | None = None,
-    income_advantage: str | None = None,
+    game_analyzer: dict[str, str] | None = None,
+    recognized_build: str | None = None,
+    possible_rushes: Sequence[str] = (),
     events_this_frame: tuple[BotEvent, ...] = (),
     ticker_entries: Sequence[str] = (),
 ) -> Image.Image:
@@ -98,10 +100,19 @@ def render_hud_panel(
     line("Army value", color=LABEL_COLOR)
     line(f"{frame.army_value_minerals}m / {frame.army_value_vespene}g")
 
-    if income_advantage is not None:
+    if game_analyzer:
         y += LINE_HEIGHT // 2
-        line("Bot status", color=LABEL_COLOR)
-        line(f"Income advantage: {income_advantage}")
+        line("Game Analyzer", color=LABEL_COLOR)
+        for metric, state in game_analyzer.items():
+            line(f"{metric}: {state}")
+
+    if recognized_build is not None or possible_rushes:
+        y += LINE_HEIGHT // 2
+        line("Build Detector", color=LABEL_COLOR)
+        if recognized_build is not None:
+            line(f"Recognized build: {recognized_build}")
+        for rush in possible_rushes:
+            line(f"Possible rush: {rush}", color=WARNING_COLOR)
 
     for event in events_this_frame:
         d = event.data_dict()

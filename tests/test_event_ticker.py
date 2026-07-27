@@ -22,6 +22,11 @@ def test_describe_event_action_error_falls_back_to_ability_id_when_name_empty():
     assert describe_event(BotEvent("action_error", 0, data=(("ability_id", 558), ("unit_tag", 1), ("result", 44), ("ability_name", "")))) == "Action error: 558"
 
 
+def test_describe_event_for_build_detector_kinds():
+    assert describe_event(BotEvent("build_recognized", 0, data=(("build", "Mutalisks"),))) == "Enemy build recognized: Mutalisks"
+    assert describe_event(BotEvent("possible_rush", 0, data=(("rush", "ProxyZealots"),))) == "Possible rush: ProxyZealots"
+
+
 def test_describe_event_returns_none_for_end_of_game_summaries():
     assert describe_event(BotEvent("unit_summary", 0, data=(("section", "own"), ("unit_type", "MARINE"), ("total", 1), ("alive", 1), ("dead", 0)))) is None
     assert describe_event(BotEvent("resource_summary", 0, data=(("resource", "Minerals"), ("max", 1), ("average", 1)))) is None

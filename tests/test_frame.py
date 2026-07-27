@@ -173,3 +173,29 @@ def test_is_structure_true_when_type_id_is_in_the_provided_set():
     orbital = _own_unit(frame, 4347658241)
     assert scv.is_structure is True  # unit_type 45 is in the provided set
     assert orbital.is_structure is False  # unit_type 132 is not
+
+
+# --- weapon_range --------------------------------------------------------------------
+
+def test_weapon_range_zero_by_default_with_no_lookup_provided():
+    # No RequestData fetch means no authoritative range data — 0.0 (unarmed) is the
+    # honest default, not a guess.
+    frame = frame_from_observation(_load_observations()[42])
+    scv = _own_unit(frame, 4354473986)
+    assert scv.weapon_range == 0.0
+
+
+def test_weapon_range_looked_up_by_unit_type():
+    frame = frame_from_observation(
+        _load_observations()[42], weapon_ranges={45: 5.0, 132: 0.0}
+    )
+    scv = _own_unit(frame, 4354473986)  # unit_type 45
+    orbital = _own_unit(frame, 4347658241)  # unit_type 132
+    assert scv.weapon_range == 5.0
+    assert orbital.weapon_range == 0.0
+
+
+def test_weapon_range_zero_for_a_unit_type_missing_from_the_lookup():
+    frame = frame_from_observation(_load_observations()[42], weapon_ranges={999: 5.0})
+    scv = _own_unit(frame, 4354473986)
+    assert scv.weapon_range == 0.0

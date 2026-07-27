@@ -50,6 +50,7 @@ let zoomLevel = MIN_ZOOM;
 let logLines = []; // parsed stderr.log entries, file order == game-loop order
 let logRows = []; // <tr> elements, index-aligned with logLines
 let highlightedLogRow = null;
+let botStateEvents = []; // classified subset of logLines -- advantage/build_recognized/possible_rush, same order
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
 function abilityName(id) {
@@ -446,6 +447,16 @@ function renderFrame(index) {
     drawDashedCircle(ctx, rem.unit, markerRadius(rem.unit), color, "remembered", age);
   }
 
+  // Selected unit's weapon range, drawn on top of everything else. weapon_range is
+  // 0 for unarmed units (workers, most structures) and for frame files extracted
+  // before this field existed — either way, nothing to draw, not an error.
+  if (selectedTag != null) {
+    const selected = hitTargets.find((t) => t.unit.tag === selectedTag);
+    if (selected && selected.unit.weapon_range > 0) {
+      drawRangeCircle(ctx, selected.unit, selected.unit.weapon_range);
+    }
+  }
+
   updateHud(frame);
   updateScrubUI(index, frame);
   updateSelectedUnitPanel();
@@ -504,6 +515,23 @@ function drawDashedCircle(ctx, u, r, color, category, ageSeconds) {
   ctx.font = "10px monospace";
   ctx.fillText(`${Math.round(ageSeconds)}s ago`, px + r + 2, py - r);
   hitTargets.push({ px, py, r: Math.max(r + 2, HIT_RADIUS_MIN), category, unit: u, ageSeconds });
+}
+
+const RANGE_CIRCLE_COLOR = "rgba(255, 235, 130, 0.55)";
+
+// Not a hit target — purely informational, doesn't need to be clickable, and
+// letting clicks fall through to whatever's underneath (including re-clicking the
+// same unit) is the more useful behavior anyway.
+function drawRangeCircle(ctx, u, range) {
+  const [px, py] = worldToPixel(u.x, u.y);
+  const r = range * transform.scale;
+  ctx.beginPath();
+  ctx.setLineDash([6, 4]);
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.strokeStyle = RANGE_CIRCLE_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 // ---------- HUD (mirrors render_hud.py's content; plain DOM text, no canvas needed
@@ -696,6 +724,72 @@ function stopPlayback() {
 const LOG_LINE_RE =
   /^(\S+)\s+(\d+)\s+(\d+)ms\s+(-?\d+)M\s+(-?\d+)G\s+(\d+)\/\s*(\d+)U\s+(INFO|WARNING|ERROR|DEBUG)\s+([\w.]+):(\d+)\s(.*)$/;
 
+// Mirrors bot_log.py's _ADVANTAGE / _BUILD_RECOGNIZED / _POSSIBLE_RUSH exactly —
+// this is a scoped subset of bot_log.py's full classifier, not a port of the whole
+// thing (that's still MP4-only, see viewer/README.md). The "[BuildDetector] "
+// prefix is optional for the same reason it is in bot_log.py: the currently
+// checked-out tbone source omits it, but every real match log inspected has it
+// anyway (likely an older bot version) — match both rather than assume.
+const ADVANTAGE_RE = /^\[GameAnalyzer\] (.+) is now (\S+)$/;
+const BUILD_RECOGNIZED_RE = /^(?:\[BuildDetector\] )?Enemy normal build recognized as (\S+)$/;
+const POSSIBLE_RUSH_RE = /^(?:\[BuildDetector\] )?POSSIBLE RUSH: (\S+)\.$/;
+
+function classifyBotStateEvents(lines) {
+  const events = [];
+  for (const line of lines) {
+    let m;
+    if ((m = ADVANTAGE_RE.exec(line.message))) {
+      events.push({ game_loop: line.game_loop, kind: "advantage", metric: m[1], state: m[2] });
+    } else if ((m = BUILD_RECOGNIZED_RE.exec(line.message))) {
+      events.push({ game_loop: line.game_loop, kind: "build_recognized", build: m[1] });
+    } else if ((m = POSSIBLE_RUSH_RE.exec(line.message))) {
+      events.push({ game_loop: line.game_loop, kind: "possible_rush", rush: m[1] });
+    }
+  }
+  return events;
+}
+
+// Persistent state "as of" a game loop — recomputed from scratch each call rather
+// than tracked incrementally, since scrubbing/stepping can move either direction in
+// time, not just forward. botStateEvents is small (a few hundred entries even for a
+// long game), so a full scan per pause/step/scrub is cheap.
+function computeBotStateAsOf(gameLoop) {
+  const gameAnalyzer = {};
+  let recognizedBuild = null;
+  const possibleRushes = [];
+  for (const e of botStateEvents) {
+    if (e.game_loop > gameLoop) break; // events are in file/game-loop order
+    if (e.kind === "advantage") {
+      gameAnalyzer[e.metric] = e.state;
+    } else if (e.kind === "build_recognized") {
+      recognizedBuild = e.build;
+    } else if (e.kind === "possible_rush" && !possibleRushes.includes(e.rush)) {
+      possibleRushes.push(e.rush);
+    }
+  }
+  return { gameAnalyzer, recognizedBuild, possibleRushes };
+}
+
+function updateBotAnalysisPanel(gameLoop) {
+  const el = document.getElementById("botAnalysis");
+  if (botStateEvents.length === 0) return; // leave the "load a bot log" placeholder up
+
+  const { gameAnalyzer, recognizedBuild, possibleRushes } = computeBotStateAsOf(gameLoop);
+  const metrics = Object.keys(gameAnalyzer);
+
+  let html = "";
+  if (metrics.length > 0) {
+    html += `<div class="section-label">Game Analyzer</div>`;
+    for (const metric of metrics) html += `<div>${metric}: ${gameAnalyzer[metric]}</div>`;
+  }
+  if (recognizedBuild !== null || possibleRushes.length > 0) {
+    html += `<div class="section-label">Build Detector</div>`;
+    if (recognizedBuild !== null) html += `<div>Recognized build: ${recognizedBuild}</div>`;
+    for (const rush of possibleRushes) html += `<div class="warning">Possible rush: ${rush}</div>`;
+  }
+  el.innerHTML = html || "<em>Nothing reported yet at this point in the game</em>";
+}
+
 document.getElementById("logFileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -725,6 +819,7 @@ function parseLogFile(text, filename) {
       message: m[11],
     });
   }
+  botStateEvents = classifyBotStateEvents(logLines);
   setLogStatus(`${filename}: ${logLines.length}/${total} lines parsed`);
   buildLogTable();
   if (frames.length > 0) updateLogPanelForFrame(frames[currentIndex]);
@@ -774,6 +869,8 @@ function findNearestLogIndex(gameLoop) {
 }
 
 function updateLogPanelForFrame(frame) {
+  updateBotAnalysisPanel(frame.game_loop);
+
   if (logRows.length === 0) return;
   const idx = findNearestLogIndex(frame.game_loop);
   if (idx < 0) return;

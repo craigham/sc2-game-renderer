@@ -39,6 +39,10 @@ def describe_event(event: BotEvent) -> str | None:
         return "High working danger — evacuate!"
     if event.kind == "action_error":
         return f"Action error: {d['ability_name'] or d['ability_id']}"
+    if event.kind == "build_recognized":
+        return f"Enemy build recognized: {d['build']}"
+    if event.kind == "possible_rush":
+        return f"Possible rush: {d['rush']}"
     return None  # unit_summary, resource_summary: end-of-game, not a ticker item
 
 

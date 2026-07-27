@@ -63,6 +63,11 @@ class ReplaySession:
         # per SC2 build, not per-replay, but fetching it is cheap and reuses the
         # one SC2 launch this replay already needs.
         self.structure_type_ids: frozenset[int] = frozenset()
+        # unit_type -> max weapon range across all its weapons (0.0 if unarmed).
+        # UnitTypeData has no single "range" field — only a repeated `weapons` list,
+        # since a unit can have separate ground/air weapons with different ranges
+        # (e.g. a Thor). Max, not per-weapon-type, for a single range circle.
+        self.weapon_ranges: dict[int, float] = {}
 
     async def __aenter__(self) -> "ReplaySession":
         self._server = await self._process.__aenter__()
@@ -76,6 +81,9 @@ class ReplaySession:
         self.structure_type_ids = frozenset(
             u.unit_id for u in data_result.data.units if data_pb2.Attribute.Structure in u.attributes
         )
+        self.weapon_ranges = {
+            u.unit_id: max((w.range for w in u.weapons), default=0.0) for u in data_result.data.units
+        }
         return self
 
     async def __aexit__(self, *exc_info) -> None:

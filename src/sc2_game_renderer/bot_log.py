@@ -147,6 +147,12 @@ _ACTION_ERROR = re.compile(r"^Action error: ActionError\(ability_id=(?P<ability_
 _GAE_SECTION = re.compile(r"^\[GameAnalyzerEnd\] (?P<section>Own|Enemy) units:$")
 _GAE_UNIT_ROW = re.compile(r"^\[GameAnalyzerEnd\] (?P<unit_type>[A-Z0-9]+)\s+total:\s*(?P<total>\d+) alive:\s*(?P<alive>\d+) dead:\s*(?P<dead>\d+)\s*$")
 _GAE_RESOURCE = re.compile(r"^\[GameAnalyzerEnd\] (?P<resource>Minerals|Vespene) max (?P<max>\d+) Average (?P<avg>\d+)$")
+# The "[BuildDetector] " prefix is optional: the currently-checked-out tbone source
+# calls self.print() for these two messages with no explicit tag, but every real
+# match log actually inspected has the tag anyway (likely an older bot version) —
+# matching both rather than assuming which one produced any given log.
+_BUILD_RECOGNIZED = re.compile(r"^(?:\[BuildDetector\] )?Enemy normal build recognized as (?P<build>\S+)$")
+_POSSIBLE_RUSH = re.compile(r"^(?:\[BuildDetector\] )?POSSIBLE RUSH: (?P<rush>\S+)\.$")
 
 
 def classify_events(lines: Iterable[LogLine]) -> Iterator[BotEvent]:
@@ -189,6 +195,10 @@ def classify_events(lines: Iterable[LogLine]) -> Iterator[BotEvent]:
             yield BotEvent("action_error", line.game_loop,
                             data=(("ability_id", int(m["ability_id"])), ("unit_tag", int(m["unit_tag"])),
                                   ("result", int(m["result"])), ("ability_name", m["ability_name"])))
+        elif m := _BUILD_RECOGNIZED.match(msg):
+            yield BotEvent("build_recognized", line.game_loop, data=(("build", m["build"]),))
+        elif m := _POSSIBLE_RUSH.match(msg):
+            yield BotEvent("possible_rush", line.game_loop, data=(("rush", m["rush"]),))
         elif m := _GAE_SECTION.match(msg):
             gae_section = m["section"].lower()
         elif m := _GAE_UNIT_ROW.match(msg):

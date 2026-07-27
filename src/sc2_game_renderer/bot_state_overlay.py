@@ -23,21 +23,48 @@ class ResourceBelief:
     supply_cap: int
 
 
-class IncomeAdvantageTracker:
-    """The one banner treated as persistent "current state" rather than a momentary
-    flash: the log frames it as an ongoing status ("is now X"). The other banners
-    (worker danger, evacuation warnings) have no corresponding "cleared" event in the
-    log, so they're rendered only on the exact frame they land on — see
-    render_hud.py — rather than invented a decay timeout not grounded in the data.
+class GameAnalyzerTracker:
+    """Persistent last-known state for every GameAnalyzer metric the bot reports
+    (Income/Known army/Predicted army advantage, and any future one — not
+    hardcoded to these three names). Treated as persistent, unlike most banners,
+    because the log itself frames each as an ongoing status ("is now X"), so "the
+    last one we heard" is a real, current fact — not a guess at whether it's still
+    true. The other banners (worker danger, evacuation warnings) have no
+    corresponding "cleared" event in the log, so they're rendered only on the exact
+    frame they land on — see render_hud.py — rather than invented a decay timeout
+    not grounded in the data.
     """
 
     def __init__(self):
-        self.state: str | None = None
+        self.state: dict[str, str] = {}  # metric name -> latest state
 
     def update(self, events: Sequence[BotEvent]) -> None:
         for e in events:
-            if e.kind == "advantage" and e.data_dict().get("metric") == "Income advantage":
-                self.state = e.data_dict()["state"]
+            if e.kind == "advantage":
+                d = e.data_dict()
+                self.state[d["metric"]] = d["state"]
+
+
+class BuildDetectorTracker:
+    """Persistent state: the bot's own best guess at the enemy's build, from
+    terranbot/managers/build_detector.py's log output. `recognized_build` is the
+    latest "normal" build recognition (stays None all game for a standard build).
+    `possible_rushes` only ever grows — there's no "ruled out" event in the log, so
+    once a rush hypothesis is flagged it stays flagged for the rest of the game.
+    """
+
+    def __init__(self):
+        self.recognized_build: str | None = None
+        self.possible_rushes: list[str] = []  # insertion order, deduplicated
+
+    def update(self, events: Sequence[BotEvent]) -> None:
+        for e in events:
+            if e.kind == "build_recognized":
+                self.recognized_build = e.data_dict()["build"]
+            elif e.kind == "possible_rush":
+                rush = e.data_dict()["rush"]
+                if rush not in self.possible_rushes:
+                    self.possible_rushes.append(rush)
 
 
 class BotStateOverlay:

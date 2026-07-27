@@ -168,6 +168,71 @@ def test_resource_summary_events():
     assert by_resource["Vespene"] == {"resource": "Vespene", "max": 1136, "average": 599}
 
 
+# --- build_recognized / possible_rush --------------------------------------------------
+#
+# Not in the checked-in fixture (this bot's build_detector never fired during that
+# particular game) — synthetic lines instead, in the real sharpy prefix format. Both
+# the tagged and untagged variants are real: every actual match log inspected
+# (tbone's match_logs/*.log) has "[BuildDetector] " prefixed, but the currently
+# checked-out tbone source calls self.print() for these two messages with no
+# explicit tag at all — likely an older bot version produced the tagged logs. The
+# parser has to handle whichever one shows up.
+
+def test_build_recognized_with_tag():
+    lines, _ = parse_log_lines(
+        "04:44 6376   76ms   155M  178G  59/ 70U INFO sharpy.managers.core.log_manager:80 "
+        "[BuildDetector] Enemy normal build recognized as Mutalisks\n"
+    )
+    events = list(classify_events(lines))
+    assert len(events) == 1
+    assert events[0].kind == "build_recognized"
+    assert events[0].data_dict() == {"build": "Mutalisks"}
+
+
+def test_build_recognized_without_tag():
+    lines, _ = parse_log_lines(
+        "04:44 6376   76ms   155M  178G  59/ 70U INFO sharpy.managers.core.log_manager:80 "
+        "Enemy normal build recognized as BattleCruisers\n"
+    )
+    events = list(classify_events(lines))
+    assert len(events) == 1
+    assert events[0].data_dict() == {"build": "BattleCruisers"}
+
+
+def test_possible_rush_with_tag():
+    lines, _ = parse_log_lines(
+        "01:32 2064   51ms   285M   26G  19/ 23U INFO sharpy.managers.core.log_manager:80 "
+        "[BuildDetector] POSSIBLE RUSH: OneBaseRax.\n"
+    )
+    events = list(classify_events(lines))
+    assert len(events) == 1
+    assert events[0].kind == "possible_rush"
+    assert events[0].data_dict() == {"rush": "OneBaseRax"}
+
+
+def test_possible_rush_without_tag():
+    lines, _ = parse_log_lines(
+        "01:32 2064   51ms   285M   26G  19/ 23U INFO sharpy.managers.core.log_manager:80 "
+        "POSSIBLE RUSH: ProxyZealots.\n"
+    )
+    events = list(classify_events(lines))
+    assert events[0].data_dict() == {"rush": "ProxyZealots"}
+
+
+def test_multiple_possible_rush_flags_yield_separate_events():
+    # Real match logs show several different rush hypotheses flagged back to back
+    # (no "ruled out" message ever retracts one) — each is its own event, not
+    # deduplicated at this layer.
+    lines, _ = parse_log_lines(
+        "01:50 2468   48ms   183M    4G  20/ 23U INFO sharpy.managers.core.log_manager:80 "
+        "[BuildDetector] POSSIBLE RUSH: OneHatcheryAllIn.\n"
+        "01:50 2468   78ms   178M    8G  20/ 23U INFO sharpy.managers.core.log_manager:80 "
+        "[BuildDetector] POSSIBLE RUSH: ProxyZealots.\n"
+    )
+    events = list(classify_events(lines))
+    assert [e.data_dict()["rush"] for e in events] == ["OneHatcheryAllIn", "ProxyZealots"]
+
+
 # --- join_events_to_frames -------------------------------------------------------------
 
 def _event(loop: int, kind: str = "workers_in_danger") -> BotEvent:
