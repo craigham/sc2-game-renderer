@@ -46,7 +46,7 @@ async def extract(
         count = 0
         with FrameFileWriter(out, header) as writer:
             async for obs in session.observations(sample_loops):
-                frame = frame_from_observation(obs)
+                frame = frame_from_observation(obs, session.structure_type_ids)
                 memory.update(frame)
                 writer.write(
                     ExtractedFrame(frame=frame, remembered_enemies=tuple(memory.remembered(frame.game_loop)))

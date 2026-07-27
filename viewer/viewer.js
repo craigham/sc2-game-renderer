@@ -25,8 +25,12 @@ const COLORS = {
   unpathable: [18, 18, 34],
   unbuildableTint: [60, 70, 110],
   own: "rgb(70,150,235)",
+  ownStructure: "rgb(40,90,150)", // darker/more muted — same hue, distinct shade
   enemy: "rgb(230,70,70)",
+  enemyStructure: "rgb(150,40,40)",
 };
+
+const MIN_MARKER_RADIUS_PX = 2; // floor so a small-footprint unit stays visible
 
 // ---------- state ----------
 let header = null;
@@ -393,14 +397,22 @@ function renderFrame(index) {
   ctx.drawImage(terrainCanvas, 0, 0, canvas.width, canvas.height);
 
   hitTargets = [];
-  const r = Math.max(2, transform.scale * 0.9);
 
-  for (const u of frame.own_units) drawFilledCircle(ctx, u, r, COLORS.own, "own");
-  for (const u of frame.enemy_visible) drawFilledCircle(ctx, u, r, COLORS.enemy, "enemy_visible");
-  for (const u of frame.enemy_snapshot) drawHollowCircle(ctx, u, r, COLORS.enemy, "enemy_snapshot");
+  for (const u of frame.own_units) {
+    drawFilledCircle(ctx, u, markerRadius(u), u.is_structure ? COLORS.ownStructure : COLORS.own, "own");
+  }
+  for (const u of frame.enemy_visible) {
+    drawFilledCircle(ctx, u, markerRadius(u), u.is_structure ? COLORS.enemyStructure : COLORS.enemy, "enemy_visible");
+  }
+  for (const u of frame.enemy_snapshot) {
+    // Always a structure in practice (SC2 only snapshots buildings through fog,
+    // never mobile units) — but read is_structure anyway rather than assume.
+    drawHollowCircle(ctx, u, markerRadius(u), u.is_structure ? COLORS.enemyStructure : COLORS.enemy, "enemy_snapshot");
+  }
   for (const rem of frame.remembered_enemies) {
     const age = (frame.game_loop - rem.last_seen_loop) / LOOPS_PER_SECOND;
-    drawDashedCircle(ctx, rem.unit, r, COLORS.enemy, "remembered", age);
+    const color = rem.unit.is_structure ? COLORS.enemyStructure : COLORS.enemy;
+    drawDashedCircle(ctx, rem.unit, markerRadius(rem.unit), color, "remembered", age);
   }
 
   updateHud(frame);
@@ -412,6 +424,13 @@ function renderFrame(index) {
   // that case is deliberate: jumping the log panel to a new row 10x/sec
   // during playback would fight any manual scrolling the user is doing.
   if (!playing) updateLogPanelForFrame(frame);
+}
+
+// Mirrors render_units.py's _radius_px: real per-unit radius (from the
+// observation) scaled to pixels, so structures (radius ~2-3) are visibly larger
+// than mobile units (radius ~0.375-0.75) without needing a separate marker shape.
+function markerRadius(u) {
+  return Math.max(MIN_MARKER_RADIUS_PX, u.radius * transform.scale);
 }
 
 function drawFilledCircle(ctx, u, r, color, category) {
@@ -519,8 +538,29 @@ function updateSelectedUnitPanel() {
 const CATEGORY_LABELS = {
   own: "Own unit",
   enemy_visible: "Enemy (visible)",
-  enemy_snapshot: "Enemy structure (remembered by SC2 through fog)",
 };
+
+// SC2's snapshot mechanism shows us a structure's last-known appearance through fog,
+// but doesn't say *when* that snapshot was last refreshed — the observation has no
+// timestamp for it. We already have everything needed to work that out ourselves,
+// though: every frame up to the current one is already loaded in memory, so this
+// just walks backward until the tag last appears in enemy_visible. Cheap enough to
+// do per-click (worst case a few thousand frame objects) with no need to track it
+// continuously like TrailTracker/EnemyMemory do on the Python side.
+//
+// Often finds nothing, and that's real, not a bug: checked against the fixture, and
+// a structure can go straight from "never seen" to Snapshot with no Visible sighting
+// in between anywhere in our 4-loop-sampled data (a fast pass — a raiding unit, a
+// drop — can cross a structure's vision radius in under one sample interval, ~0.18s
+// of game time, even though SC2 itself registered the reveal). The panel says so
+// explicitly rather than silently omitting the age, since this turned out to be the
+// common case here, not a rare edge case.
+function lastVisibleLoopForTag(tag, uptoIndex) {
+  for (let i = uptoIndex; i >= 0; i--) {
+    if (frames[i].enemy_visible.some((u) => u.tag === tag)) return frames[i].game_loop;
+  }
+  return null;
+}
 
 function describeOrder(o) {
   const name = abilityName(o.ability_id);
@@ -534,10 +574,23 @@ function describeOrder(o) {
 function showUnitDetail(target) {
   const u = target.unit;
   const isOwn = target.category === "own";
-  const categoryLabel =
-    target.category === "remembered"
-      ? `Enemy &mdash; last seen ${Math.round(target.ageSeconds)}s ago`
-      : CATEGORY_LABELS[target.category];
+
+  let categoryLabel;
+  if (target.category === "remembered") {
+    categoryLabel = `Enemy &mdash; last seen ${Math.round(target.ageSeconds)}s ago`;
+  } else if (target.category === "enemy_snapshot") {
+    const lastVisibleLoop = lastVisibleLoopForTag(u.tag, currentIndex);
+    const label = "Enemy structure (remembered by SC2 through fog)";
+    categoryLabel =
+      lastVisibleLoop != null
+        ? `${label} &mdash; last seen ${Math.round((frames[currentIndex].game_loop - lastVisibleLoop) / LOOPS_PER_SECOND)}s ago`
+        // Genuinely common, not a bug — see lastVisibleLoopForTag's comment: our
+        // 4-loop sampling can miss a reveal briefer than one sample interval even
+        // though SC2 itself registered it.
+        : `${label} &mdash; no directly-observed sighting in sampled data`;
+  } else {
+    categoryLabel = CATEGORY_LABELS[target.category];
+  }
 
   // SC2 never reports an order for a unit you don't own (see frame.py) — showing
   // "idle" for an enemy would claim knowledge fog doesn't give us. Own units:

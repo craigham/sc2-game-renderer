@@ -12,17 +12,29 @@ to build that background.
 from PIL import Image, ImageDraw
 
 from sc2_game_renderer.coords import WorldToPixel
+from sc2_game_renderer.frame import UnitSnapshot
 from sc2_game_renderer.frame_file import ExtractedFrame
 
-OWN_COLOR = (70, 150, 235)
-ENEMY_COLOR = (230, 70, 70)
+OWN_UNIT_COLOR = (70, 150, 235)
+OWN_STRUCTURE_COLOR = (40, 90, 150)  # darker/more muted — same hue, distinct shade
+ENEMY_UNIT_COLOR = (230, 70, 70)
+ENEMY_STRUCTURE_COLOR = (150, 40, 40)
 TRAIL_COLOR = (70, 150, 235)
 
-UNIT_RADIUS_SCALE = 0.9  # relative to WorldToPixel.scale
+MIN_RADIUS_PX = 2.0  # floor so a small-footprint unit (e.g. a Zergling) stays visible
 TRAIL_ALPHA_MIN = 60  # oldest segment
 TRAIL_ALPHA_MAX = 220  # newest segment
 DASH_DEGREES = 18
 GAP_DEGREES = 14
+
+
+def _radius_px(u: UnitSnapshot, transform: WorldToPixel) -> float:
+    """Real per-unit radius (u.radius, from the observation) scaled to pixels —
+    proportional to each unit's actual in-game footprint rather than one fixed size
+    for everything. Structures (radius ~2-3) end up visibly larger than mobile units
+    (radius ~0.375-0.75), which is also what makes them recognizable without a
+    separate marker shape."""
+    return max(MIN_RADIUS_PX, u.radius * transform.scale)
 
 
 def render_units(
@@ -34,40 +46,47 @@ def render_units(
     img = background.convert("RGBA")
     draw = ImageDraw.Draw(img, "RGBA")
     frame = extracted.frame
-    r = max(2.0, transform.scale * UNIT_RADIUS_SCALE)
 
-    _draw_trails(draw, transform, trails, r)
+    _draw_trails(draw, transform, trails, MIN_RADIUS_PX)
 
     for u in frame.own_units:
-        _filled_circle(draw, transform, (u.x, u.y), r, OWN_COLOR)
+        color = OWN_STRUCTURE_COLOR if u.is_structure else OWN_UNIT_COLOR
+        _filled_circle(draw, transform, u, _radius_px(u, transform), color)
 
     for u in frame.enemy_visible:
-        _filled_circle(draw, transform, (u.x, u.y), r, ENEMY_COLOR)
+        color = ENEMY_STRUCTURE_COLOR if u.is_structure else ENEMY_UNIT_COLOR
+        _filled_circle(draw, transform, u, _radius_px(u, transform), color)
 
     for u in frame.enemy_snapshot:
-        _hollow_circle(draw, transform, (u.x, u.y), r, ENEMY_COLOR)
+        # Always a structure in practice — SC2 only ever snapshots buildings
+        # through fog, never mobile units — but read is_structure anyway rather
+        # than assuming, in case that ever isn't true for some unit.
+        color = ENEMY_STRUCTURE_COLOR if u.is_structure else ENEMY_UNIT_COLOR
+        _hollow_circle(draw, transform, u, _radius_px(u, transform), color)
 
     for remembered in extracted.remembered_enemies:
         age = remembered.age_seconds(frame.game_loop)
-        pos = (remembered.unit.x, remembered.unit.y)
-        _dashed_circle(draw, transform, pos, r, ENEMY_COLOR)
-        _label(draw, transform, pos, r, f"{age:.0f}s ago", ENEMY_COLOR)
+        u = remembered.unit
+        color = ENEMY_STRUCTURE_COLOR if u.is_structure else ENEMY_UNIT_COLOR
+        r = _radius_px(u, transform)
+        _dashed_circle(draw, transform, u, r, color)
+        _label(draw, transform, u, r, f"{age:.0f}s ago", color)
 
     return img.convert("RGB")
 
 
-def _filled_circle(draw, transform, world_pos, r, color):
-    px, py = transform.to_pixel(*world_pos)
+def _filled_circle(draw, transform, u, r, color):
+    px, py = transform.to_pixel(u.x, u.y)
     draw.ellipse([px - r, py - r, px + r, py + r], fill=(*color, 255))
 
 
-def _hollow_circle(draw, transform, world_pos, r, color):
-    px, py = transform.to_pixel(*world_pos)
+def _hollow_circle(draw, transform, u, r, color):
+    px, py = transform.to_pixel(u.x, u.y)
     draw.ellipse([px - r, py - r, px + r, py + r], outline=(*color, 255), width=2)
 
 
-def _dashed_circle(draw, transform, world_pos, r, color):
-    px, py = transform.to_pixel(*world_pos)
+def _dashed_circle(draw, transform, u, r, color):
+    px, py = transform.to_pixel(u.x, u.y)
     bbox = [px - r, py - r, px + r, py + r]
     angle = 0.0
     while angle < 360.0:
@@ -76,8 +95,8 @@ def _dashed_circle(draw, transform, world_pos, r, color):
         angle += DASH_DEGREES + GAP_DEGREES
 
 
-def _label(draw, transform, world_pos, r, text, color):
-    px, py = transform.to_pixel(*world_pos)
+def _label(draw, transform, u, r, text, color):
+    px, py = transform.to_pixel(u.x, u.y)
     draw.text((px + r + 2, py - r), text, fill=(*color, 230))
 
 

@@ -33,6 +33,31 @@ own units filled blue, enemy visible filled red, enemy structures SC2 remembers
 through fog hollow red, enemy positions this tool remembers dashed red with an age
 label.
 
+**Structures vs. mobile units:** both are sized proportional to their real per-unit
+`radius` (from the observation, not a guess), so a Command Center reads much larger
+than an SCV, and shaded a step darker/more muted than the same-side unit color —
+still one recognizable hue per side, not a new marker shape. Classified via SC2's own
+game data (the `Structure` attribute, fetched once per extraction), not inferred from
+radius or health alone — a Thor or Ultralisk has a large radius too, but isn't a
+structure.
+
+**Enemy structures stay on screen through fog** as the hollow "snapshot" marker
+(SC2's own memory, not this tool's) for as long as SC2 itself remembers them.
+Clicking one adds "last seen Xs ago" when it can be determined — computed here in
+the browser (not extracted in Python) by scanning backward through the already-loaded
+frames for the most recent sampled frame where that same tag was directly
+`enemy_visible`. **This often comes back empty, and that's real, not a bug**: checked
+against the fixture, and a structure can go straight from "never seen" to a snapshot
+with no `enemy_visible` sighting anywhere in the sampled data — a fast pass (a raid,
+a drop) can cross a structure's vision radius in under one sample interval (~0.18s of
+game time at the default 4-loop sampling) even though SC2 itself registered the
+reveal at the time. The panel says "no directly-observed sighting in sampled data"
+rather than silently omitting the age, since in this fixture that's the *common*
+case, not rare. (Separately, and unexpectedly: SC2 doesn't always keep a structure
+snapshotted forever once first seen either — one was observed going fully absent for
+several minutes, then reappearing later. Not chased further here; worth keeping in
+mind if `enemy_snapshot` ever seems to have fewer entries than expected.)
+
 The log panel shows raw parsed lines (loop, clock, level, logger, message) only.
 **Not included, on purpose:** the classified bot-state overlay — positioned
 build/pathing events, banners, the recent-events ticker, and the belief-vs-truth

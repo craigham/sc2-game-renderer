@@ -10,7 +10,7 @@ SC2.
 from pathlib import Path
 from typing import AsyncIterator
 
-from s2clientprotocol import sc2api_pb2 as sc_pb
+from s2clientprotocol import data_pb2, sc2api_pb2 as sc_pb
 from sc2.client import Client
 from sc2.sc2process import SC2Process
 
@@ -45,8 +45,9 @@ class ReplaySession:
             async for obs in session.observations(sample_loops=4):
                 ...                                     # ResponseObservation
 
-    game_info is fetched once, right after the replay starts, so both the frame file
-    header and the frame stream come from a single SC2 launch.
+    game_info and structure_type_ids are both fetched once, right after the replay
+    starts, so the frame file header, the per-unit structure classification, and the
+    frame stream all come from a single SC2 launch.
     """
 
     def __init__(self, replay: Path, observed_id: int):
@@ -56,6 +57,12 @@ class ReplaySession:
         self._server = None
         self._client: Client | None = None
         self.game_info: sc_pb.ResponseGameInfo | None = None
+        # unit_type -> is a Structure (building), per SC2's own game data (the
+        # Structure attribute) rather than a guess from radius/health — a Thor or
+        # Ultralisk has a large radius too, but isn't a structure. This is static
+        # per SC2 build, not per-replay, but fetching it is cheap and reuses the
+        # one SC2 launch this replay already needs.
+        self.structure_type_ids: frozenset[int] = frozenset()
 
     async def __aenter__(self) -> "ReplaySession":
         self._server = await self._process.__aenter__()
@@ -64,6 +71,11 @@ class ReplaySession:
         self._client = Client(self._server._ws)
         result = await self._server._execute(game_info=sc_pb.RequestGameInfo())
         self.game_info = result.game_info
+
+        data_result = await self._server._execute(data=sc_pb.RequestData(unit_type_id=True))
+        self.structure_type_ids = frozenset(
+            u.unit_id for u in data_result.data.units if data_pb2.Attribute.Structure in u.attributes
+        )
         return self
 
     async def __aexit__(self, *exc_info) -> None:

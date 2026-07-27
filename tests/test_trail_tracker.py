@@ -6,7 +6,7 @@ def _unit(tag: int, x: float, y: float) -> UnitSnapshot:
     return UnitSnapshot(
         tag=tag, unit_type=48, x=x, y=y,
         health=45.0, health_max=45.0, shield=0.0, shield_max=0.0, energy=0.0, energy_max=0.0,
-        orders=(),
+        radius=0.5, is_structure=False, orders=(),
     )
 
 

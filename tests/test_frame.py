@@ -144,3 +144,32 @@ def test_idle_own_unit_has_no_orders():
     frame = frame_from_observation(_load_observations()[42])
     idle_units = [u for u in frame.own_units if u.orders == ()]
     assert idle_units  # 108 - 81 = 27 own units with no queued order, per the fixture
+
+
+# --- radius / is_structure ----------------------------------------------------------
+
+def test_radius_captured_from_observation():
+    frame = frame_from_observation(_load_observations()[42])
+    scv = _own_unit(frame, 4354473986)
+    orbital = _own_unit(frame, 4347658241)
+    assert scv.radius == pytest.approx(0.375)
+    assert orbital.radius == pytest.approx(2.75)
+
+
+def test_is_structure_false_by_default_with_no_classification_provided():
+    # frame_from_observation's structure_type_ids defaults to empty — honest
+    # "not classified" rather than a guess, since without it we have no authoritative
+    # signal (radius/health alone would misclassify large non-structures).
+    frame = frame_from_observation(_load_observations()[42])
+    orbital = _own_unit(frame, 4347658241)  # a real building, radius 2.75
+    assert orbital.is_structure is False
+
+
+def test_is_structure_true_when_type_id_is_in_the_provided_set():
+    # 45 is the SCV's own unit_type — using it here (not the real ORBITALCOMMAND id)
+    # keeps this test about the classification mechanism, not real game data.
+    frame = frame_from_observation(_load_observations()[42], structure_type_ids=frozenset({45}))
+    scv = _own_unit(frame, 4354473986)
+    orbital = _own_unit(frame, 4347658241)
+    assert scv.is_structure is True  # unit_type 45 is in the provided set
+    assert orbital.is_structure is False  # unit_type 132 is not
