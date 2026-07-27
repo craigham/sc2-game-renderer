@@ -17,7 +17,22 @@ body {
   overflow: hidden; /* the map pane scrolls internally; the page itself never does */
 }
 
+/* Always visible regardless of window/embed size: flex-shrink:0 so a short
+ * viewport (e.g. an iframe embed) squeezes #main/#logPanel first, never this. */
+#matchTitle {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  background: #1a2a3a;
+  border-bottom: 1px solid #2a3a4a;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 #loadBar {
+  flex: 0 0 auto;
   padding: 10px 16px;
   background: #1a1a22;
   border-bottom: 1px solid #2a2a34;

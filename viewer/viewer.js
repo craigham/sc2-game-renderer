@@ -177,11 +177,26 @@ async function decompressStreamToText(stream) {
   return await new Response(stream.pipeThrough(new DecompressionStream("gzip"))).text();
 }
 
+// The frame file header carries no match id or player names — the only place a
+// match identifier exists is the filename (file-picker) or URL (?frames=<url>,
+// e.g. sc_bot_test_lab serving /frames/1234.frames.jsonl.gz). Pulled out into its
+// own always-visible bar (see #matchTitle in viewer.css) rather than left buried
+// in the loading-status line, which can be squeezed out of a short embed.
+function deriveMatchLabel(source) {
+  const base = source.split("/").pop().split("?")[0];
+  return base.replace(/\.frames\.jsonl\.gz$/, "");
+}
+
+function setMatchTitle(source, mapName) {
+  document.getElementById("matchTitle").textContent = `${deriveMatchLabel(source)} — ${mapName}`;
+}
+
 function parseFrameFile(text, filename) {
   const lines = text.split("\n").filter((l) => l.length > 0);
   header = JSON.parse(lines[0]);
   frames = lines.slice(1).map((l) => JSON.parse(l));
 
+  setMatchTitle(filename, header.map_name);
   setStatus(`${filename}: ${header.map_name}, ${frames.length} frames, bot_player_id=${header.bot_player_id}`);
   selectedTag = null;
   document.getElementById("unitDetail").innerHTML = "<em>Click a unit to inspect it</em>";
