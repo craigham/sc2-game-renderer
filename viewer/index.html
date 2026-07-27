@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>SC2 Replay Viewer</title>
-<link rel="stylesheet" href="viewer.css">
+<link rel="stylesheet" href="viewer.css?v=4">
 </head>
 <body>
 
@@ -49,8 +49,13 @@
   </div>
 </div>
 
+<!-- ?v= is a manual cache-buster: bump it whenever viewer.js/viewer.css changes.
+     Without it, a browser tab left open (or one that cached the response) can keep
+     running stale JS after a deploy with no visible sign anything's wrong — this is
+     what happened after the match-label fix landed on test_lab but a browser had
+     already cached the previous viewer.js. -->
 <script src="data/ability_names.js"></script>
 <script src="data/unit_type_names.js"></script>
-<script src="viewer.js"></script>
+<script src="viewer.js?v=4"></script>
 </body>
 </html>
