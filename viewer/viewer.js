@@ -464,6 +464,7 @@ function renderFrame(index) {
   }
 
   updateHud(frame);
+  updateUnitCensusPanel(index);
   updateScrubUI(index, frame);
   updateSelectedUnitPanel();
   // Scrubbing/stepping/stopping call stopPlayback() before ever reaching
@@ -564,6 +565,27 @@ function updateHud(frame) {
     <div class="section-label">Army value</div>
     <div>${frame.army_value_minerals}m / ${frame.army_value_vespene}g</div>
   `;
+}
+
+function updateUnitCensusPanel(index) {
+  const el = document.getElementById("unitCensus");
+  if (!el) return;
+  if (!frames || frames.length === 0) {
+    el.innerHTML = "<em>Load a frame file to see unit counts</em>";
+    return;
+  }
+  const rows = computeOwnUnitCensus(frames, index);
+  if (rows.length === 0) {
+    el.innerHTML = `<div class="section-label">Own Units</div><em>No army/workers yet</em>`;
+    return;
+  }
+  let html = `<div class="section-label">Own Units</div>`;
+  html += `<table id="unitCensusTable"><thead><tr><th>Type</th><th>Alive</th><th>Dead</th></tr></thead><tbody>`;
+  for (const r of rows) {
+    html += `<tr><td>${escapeHtml(r.name)}</td><td>${r.alive}</td><td>${r.dead}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  el.innerHTML = html;
 }
 
 function updateScrubUI(index, frame) {
