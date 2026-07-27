@@ -182,17 +182,30 @@ async function decompressStreamToText(stream) {
 }
 
 // The frame file header carries no match id or player names — the only place a
-// match identifier exists is the filename (file-picker) or URL (?frames=<url>,
-// e.g. sc_bot_test_lab serving /frames/1234.frames.jsonl.gz). Pulled out into its
-// own always-visible bar (see #matchTitle in viewer.css) rather than left buried
-// in the loading-status line, which can be squeezed out of a short embed.
+// match identifier exists is the filename (file-picker) or URL (?frames=<url>).
+// Pulled out into its own always-visible bar (see #matchTitle in viewer.css)
+// rather than left buried in the loading-status line, which can be squeezed out
+// of a short embed.
+//
+// test_lab's actual URL is /render/<match_id>/frames.gz — a generic filename with
+// the real identifier one path segment up, not encoded in the filename itself the
+// way the original /frames/1234.frames.jsonl.gz assumption expected. Confirmed
+// against test_lab/urls.py rather than re-guessed.
+const GENERIC_FRAME_FILENAMES = new Set(["frames.gz", "frames.jsonl.gz", "frames"]);
+
 function deriveMatchLabel(source) {
-  const base = source.split("/").pop().split("?")[0];
+  const parts = source.split("?")[0].split("/").filter((p) => p.length > 0);
+  let base = parts.pop() || source;
+  if (GENERIC_FRAME_FILENAMES.has(base) && parts.length > 0) {
+    base = parts.pop(); // e.g. test_lab's match_id directory segment
+  }
   return base.replace(/\.frames\.jsonl\.gz$/, "");
 }
 
 function setMatchTitle(source, mapName) {
-  document.getElementById("matchTitle").textContent = `${deriveMatchLabel(source)} — ${mapName}`;
+  const title = `${deriveMatchLabel(source)} — ${mapName}`;
+  document.getElementById("matchTitle").textContent = title;
+  document.title = title; // visible in the browser tab, per multiple-open-matches feedback
 }
 
 function parseFrameFile(text, filename) {
