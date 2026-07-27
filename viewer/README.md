@@ -79,6 +79,13 @@ backward genuinely shows what was known then, not future knowledge (verified
 directly: an event placed after the paused frame in a synthetic log correctly does
 not appear).
 
+**Own Units census**, below Game Analyzer / Build Detector: a live table of your
+army and workers (structures excluded) with alive and dead counts as of the
+current scrub position. Counts come from frame tags — a unit is dead once its
+tag leaves `own_units`. Terran morph variants (siege mode, Hellbat, Liberator AG,
+etc.) collapse to one row so a morph is not counted as a death. Recomputed on
+every frame change by scanning frames up to the scrub index (no bot log required).
+
 The log panel itself shows raw parsed lines (loop, clock, level, logger, message).
 **Still not included:** the rest of the classified bot-state overlay — positioned
 build/pathing events, the recent-events ticker, and the belief-vs-truth resource
