@@ -101,6 +101,7 @@ def render(
             map_img = render_bot_events(map_img, transform, events_here)
             hud_panel = render_hud_panel(
                 frame, blocked_seconds, width=sidebar_width, height=height,
+                opponent_description=header.opponent.describe(),
                 resource_belief=overlay.resource_belief_at(frame.game_loop) if overlay is not None else None,
                 income_advantage=income_tracker.state,
                 events_this_frame=events_here,

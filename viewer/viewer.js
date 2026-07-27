@@ -202,8 +202,26 @@ function deriveMatchLabel(source) {
   return base.replace(/\.frames\.jsonl\.gz$/, "");
 }
 
-function setMatchTitle(source, mapName) {
-  const title = `${deriveMatchLabel(source)} — ${mapName}`;
+// difficulty/ai_build are only present at all for a Computer (Blizzard AI)
+// opponent — a real player/bot has neither, so just the race shows for those.
+function describeOpponent(opponent) {
+  let text = `vs ${opponent.race}`;
+  if (opponent.player_type === "Computer") {
+    const parts = [];
+    if (opponent.difficulty) parts.push(opponent.difficulty);
+    if (opponent.ai_build) parts.push(`${opponent.ai_build} AI`);
+    if (parts.length > 0) text += ` (${parts.join(", ")})`;
+  }
+  return text;
+}
+
+function setMatchTitle(source, header) {
+  // header.opponent is absent on frame files extracted before this field existed
+  // (there are already several cached on test_lab) — omit that part of the title
+  // rather than throwing and aborting the rest of parseFrameFile mid-way through,
+  // which would leave the whole viewer blank for any of those old matches.
+  const opponentText = header.opponent ? ` — ${describeOpponent(header.opponent)}` : "";
+  const title = `${deriveMatchLabel(source)} — ${header.map_name}${opponentText}`;
   document.getElementById("matchTitle").textContent = title;
   document.title = title; // visible in the browser tab, per multiple-open-matches feedback
 }
@@ -213,7 +231,7 @@ function parseFrameFile(text, filename) {
   header = JSON.parse(lines[0]);
   frames = lines.slice(1).map((l) => JSON.parse(l));
 
-  setMatchTitle(filename, header.map_name);
+  setMatchTitle(filename, header);
   setStatus(`${filename}: ${header.map_name}, ${frames.length} frames, bot_player_id=${header.bot_player_id}`);
   selectedTag = null;
   document.getElementById("unitDetail").innerHTML = "<em>Click a unit to inspect it</em>";

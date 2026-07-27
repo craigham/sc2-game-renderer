@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 import numpy as np
+from s2clientprotocol import common_pb2, sc2api_pb2
 
 from sc2_game_renderer.enemy_memory import RememberedEnemy
 from sc2_game_renderer.frame import Frame, UnitOrder, UnitSnapshot
@@ -52,6 +53,41 @@ class TerrainGrid:
 
 
 @dataclass(frozen=True, slots=True)
+class OpponentInfo:
+    race: str  # "Terran" / "Zerg" / "Protoss" / "Random" / "NoRace"
+    player_type: str  # "Participant" / "Computer" / "Observer"
+    # Only ever meaningful (and only ever set) for a Computer opponent — a real
+    # player/bot has no "difficulty". Distinguished via the proto's own field
+    # presence (HasField), not by treating an unset value as a guessed default:
+    # difficulty/ai_build's zero-values (VeryEasy=1, RandomBuild=1) aren't 0, so an
+    # absent field can't be told apart from a genuinely-set first value any other way.
+    difficulty: str | None
+    ai_build: str | None
+    name: str  # often empty — confirmed on a real ladder match (privacy, presumably)
+
+    @classmethod
+    def from_player_info(cls, p) -> "OpponentInfo":
+        return cls(
+            race=common_pb2.Race.Name(p.race_actual),
+            player_type=sc2api_pb2.PlayerType.Name(p.type),
+            difficulty=sc2api_pb2.Difficulty.Name(p.difficulty) if p.HasField("difficulty") else None,
+            ai_build=sc2api_pb2.AIBuild.Name(p.ai_build) if p.HasField("ai_build") else None,
+            name=p.player_name,
+        )
+
+    def describe(self) -> str:
+        """'vs Terran' for a real opponent; 'vs Zerg (VeryHard, Rush AI)' for a
+        Blizzard AI one. Mirrors viewer.js's describeOpponent — kept in sync by hand,
+        since one's JS and one's Python."""
+        text = f"vs {self.race}"
+        if self.player_type == "Computer":
+            parts = [p for p in (self.difficulty, f"{self.ai_build} AI" if self.ai_build else None) if p]
+            if parts:
+                text += f" ({', '.join(parts)})"
+        return text
+
+
+@dataclass(frozen=True, slots=True)
 class GameHeader:
     format_version: int
     map_name: str
@@ -65,10 +101,12 @@ class GameHeader:
     bot_player_id: int
     sample_loops: int
     memory_ttl_seconds: float
+    opponent: OpponentInfo
 
     @classmethod
     def from_game_info(cls, game_info, *, bot_player_id: int, sample_loops: int, memory_ttl_seconds: float) -> "GameHeader":
         sr = game_info.start_raw
+        opponent_pb = next(p for p in game_info.player_info if p.player_id != bot_player_id)
         return cls(
             format_version=FORMAT_VERSION,
             map_name=game_info.map_name,
@@ -82,6 +120,7 @@ class GameHeader:
             bot_player_id=bot_player_id,
             sample_loops=sample_loops,
             memory_ttl_seconds=memory_ttl_seconds,
+            opponent=OpponentInfo.from_player_info(opponent_pb),
         )
 
 
@@ -122,6 +161,7 @@ def _header_from_dict(d: dict) -> GameHeader:
     d["pathing_grid"] = TerrainGrid(**d["pathing_grid"])
     d["placement_grid"] = TerrainGrid(**d["placement_grid"])
     d["terrain_height"] = TerrainGrid(**d["terrain_height"])
+    d["opponent"] = OpponentInfo(**d["opponent"])
     return GameHeader(**d)
 
 

@@ -46,6 +46,7 @@ def render_hud_panel(
     width: int = DEFAULT_SIDEBAR_WIDTH,
     height: int = 720,
     *,
+    opponent_description: str | None = None,
     resource_belief: ResourceBelief | None = None,
     income_advantage: str | None = None,
     events_this_frame: tuple[BotEvent, ...] = (),
@@ -68,6 +69,8 @@ def render_hud_panel(
         line(f"  bot believed: {believed_value}", color=color)
 
     line(_format_clock(frame.game_loop), color=TEXT_COLOR)
+    if opponent_description is not None:
+        line(opponent_description, color=LABEL_COLOR)
     y += LINE_HEIGHT // 2
 
     line("Resources", color=LABEL_COLOR)
