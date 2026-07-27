@@ -48,8 +48,14 @@ const LIVE_POLL_INTERVAL_MS = 2000;
 let zoomLevel = MIN_ZOOM;
 
 let logLines = []; // parsed stderr.log entries, file order == game-loop order
-let logRows = []; // <tr> elements, index-aligned with logLines
 let highlightedLogRow = null;
+// Rows before/after the current position to render in the log table. Real match
+// logs can run 80k+ lines (vs. the ~3k-line fixture this was originally tested
+// against) — building one <tr> per line plus scrollIntoView() on that full table
+// measured at ~12.9s total (2.5s DOM build + ~10.2s scrollIntoView) on an 80,961-row
+// table. Rendering only a small window around the current index keeps both costs
+// negligible regardless of log size.
+const LOG_WINDOW_RADIUS = 200;
 let botStateEvents = []; // classified subset of logLines -- advantage/build_recognized/possible_rush, same order
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
@@ -821,7 +827,6 @@ function parseLogFile(text, filename) {
   }
   botStateEvents = classifyBotStateEvents(logLines);
   setLogStatus(`${filename}: ${logLines.length}/${total} lines parsed`);
-  buildLogTable();
   if (frames.length > 0) updateLogPanelForFrame(frames[currentIndex]);
 }
 
@@ -833,21 +838,32 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildLogTable() {
+// Renders only logLines[centerIndex - LOG_WINDOW_RADIUS .. centerIndex + LOG_WINDOW_RADIUS]
+// (clamped) and highlights centerIndex. Replaces the whole table each call — with at
+// most ~400 rows this is cheap, unlike building/scrolling the full log.
+function renderLogWindow(centerIndex) {
   const tbody = document.getElementById("logTableBody");
   tbody.innerHTML = "";
-  logRows = new Array(logLines.length);
   highlightedLogRow = null;
+  if (logLines.length === 0) return;
+
+  const start = Math.max(0, centerIndex - LOG_WINDOW_RADIUS);
+  const end = Math.min(logLines.length - 1, centerIndex + LOG_WINDOW_RADIUS);
   const frag = document.createDocumentFragment();
-  logLines.forEach((line, i) => {
+  for (let i = start; i <= end; i++) {
+    const line = logLines[i];
     const tr = document.createElement("tr");
     tr.className = `loglevel-${line.level}`;
     tr.innerHTML = `<td>${line.game_loop}</td><td>${line.clock}</td><td>${line.level}</td>` +
       `<td>${line.logger}</td><td>${escapeHtml(line.message)}</td>`;
-    logRows[i] = tr;
+    if (i === centerIndex) {
+      tr.classList.add("current");
+      highlightedLogRow = tr;
+    }
     frag.appendChild(tr);
-  });
+  }
   tbody.appendChild(frag);
+  if (highlightedLogRow) highlightedLogRow.scrollIntoView({ block: "center" });
 }
 
 // bisect_left on game_loop, then pick whichever neighbor is closer — mirrors
@@ -871,14 +887,10 @@ function findNearestLogIndex(gameLoop) {
 function updateLogPanelForFrame(frame) {
   updateBotAnalysisPanel(frame.game_loop);
 
-  if (logRows.length === 0) return;
+  if (logLines.length === 0) return;
   const idx = findNearestLogIndex(frame.game_loop);
   if (idx < 0) return;
-  if (highlightedLogRow) highlightedLogRow.classList.remove("current");
-  const row = logRows[idx];
-  row.classList.add("current");
-  row.scrollIntoView({ block: "center" });
-  highlightedLogRow = row;
+  renderLogWindow(idx);
 }
 
 // ---------- log panel resize (drag the handle at its top edge) ----------

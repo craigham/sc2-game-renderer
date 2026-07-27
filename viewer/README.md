@@ -16,7 +16,10 @@ No server, no build step, no npm.
    panel scrolls to and highlights the log line nearest the current frame's game
    loop — but only when playback is paused, stepped, or scrubbed, never while
    playing, so it doesn't fight a manual scroll 10 times a second. Scroll freely
-   within it to see entries around the paused frame.
+   within it to see entries around the paused frame. Only the ~400 lines around
+   that position are actually in the DOM at once (real match logs can run 80k+
+   lines — rendering the whole table plus `scrollIntoView` on it measured at
+   ~13s on one such log); scrubbing further re-centers the window.
 
 Requires a browser with `DecompressionStream` (Chrome/Edge 80+, Firefox 113+, Safari
 16.4+) — all recent.
