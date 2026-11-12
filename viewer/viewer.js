@@ -57,6 +57,7 @@ let highlightedLogRow = null;
 // negligible regardless of log size.
 const LOG_WINDOW_RADIUS = 200;
 let botStateEvents = []; // classified subset of logLines -- advantage/build_recognized/possible_rush, same order
+let armyLog = null; // classifyArmyEvents() result; null until a bot log is loaded
 
 // ---------- name lookups (ABILITY_NAMES / UNIT_TYPE_NAMES from data/*.js) ----------
 function abilityName(id) {
@@ -462,8 +463,10 @@ function renderFrame(index) {
       drawRangeCircle(ctx, selected.unit, selected.unit.weapon_range);
     }
   }
+  drawObjectiveRing(ctx, frame.game_loop);
 
   updateHud(frame);
+  updateArmyObjectivePanel(frame.game_loop);
   updateUnitCensusPanel(index);
   updateScrubUI(index, frame);
   updateSelectedUnitPanel();
@@ -539,6 +542,19 @@ function drawRangeCircle(ctx, u, range) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+// Solid ring, distinct from the dashed weapon-range circle. Not a hit target.
+function drawObjectiveRing(ctx, gameLoop) {
+  const view = mainArmyAt(armyLog, gameLoop);
+  if (view.status !== "ready" || !view.target) return;
+  const [px, py] = worldToPixel(view.target[0], view.target[1]);
+  const r = OBJECTIVE_RING_RADIUS * transform.scale;
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgb(255, 210, 0)";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
 }
 
 // ---------- HUD (mirrors render_hud.py's content; plain DOM text, no canvas needed
@@ -798,6 +814,32 @@ function computeBotStateAsOf(gameLoop) {
   return { gameAnalyzer, recognizedBuild, possibleRushes };
 }
 
+function updateArmyObjectivePanel(gameLoop) {
+  const el = document.getElementById("armyObjective");
+  if (!el) return;
+  const view = mainArmyAt(armyLog, gameLoop);
+  if (view.status === "no-log") {
+    el.innerHTML = "<em>Load a bot log to see the main army objective</em>";
+    return;
+  }
+  if (view.status === "no-diagnostics") {
+    el.innerHTML = "<em>No movement diagnostics in this log</em>";
+    return;
+  }
+  if (view.status === "no-objective") {
+    el.innerHTML = "<em>No main army objective yet</em>";
+    return;
+  }
+  const simLine = view.sim ? `<div>Sim: ${escapeHtml(view.sim)}</div>` : "";
+  el.innerHTML = `
+    <div class="section-label">Main army</div>
+    <div>Objective: ${escapeHtml(view.objective)}</div>
+    <div>Action: ${view.action ? escapeHtml(view.action) : "—"}</div>
+    <div>ETA: ${view.eta ? escapeHtml(view.eta) : "—"}</div>
+    ${simLine}
+  `;
+}
+
 function updateBotAnalysisPanel(gameLoop) {
   const el = document.getElementById("botAnalysis");
   if (botStateEvents.length === 0) return; // leave the "load a bot log" placeholder up
@@ -848,6 +890,7 @@ function parseLogFile(text, filename) {
     });
   }
   botStateEvents = classifyBotStateEvents(logLines);
+  armyLog = classifyArmyEvents(logLines);
   setLogStatus(`${filename}: ${logLines.length}/${total} lines parsed`);
   if (frames.length > 0) updateLogPanelForFrame(frames[currentIndex]);
 }
@@ -908,6 +951,7 @@ function findNearestLogIndex(gameLoop) {
 
 function updateLogPanelForFrame(frame) {
   updateBotAnalysisPanel(frame.game_loop);
+  updateArmyObjectivePanel(frame.game_loop);
 
   if (logLines.length === 0) return;
   const idx = findNearestLogIndex(frame.game_loop);
