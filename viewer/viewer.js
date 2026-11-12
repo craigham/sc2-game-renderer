@@ -819,15 +819,15 @@ function updateArmyObjectivePanel(gameLoop) {
   if (!el) return;
   const view = mainArmyAt(armyLog, gameLoop);
   if (view.status === "no-log") {
-    el.innerHTML = "<em>Load a bot log to see the main army objective</em>";
+    el.innerHTML = `<div class="section-label">Main army</div><em>Load a bot log to see the main army objective</em>`;
     return;
   }
   if (view.status === "no-diagnostics") {
-    el.innerHTML = "<em>No movement diagnostics in this log</em>";
+    el.innerHTML = `<div class="section-label">Main army</div><em>No movement diagnostics in this log</em>`;
     return;
   }
   if (view.status === "no-objective") {
-    el.innerHTML = "<em>No main army objective yet</em>";
+    el.innerHTML = `<div class="section-label">Main army</div><em>No objective yet</em>`;
     return;
   }
   const simLine = view.sim ? `<div>Sim: ${escapeHtml(view.sim)}</div>` : "";
